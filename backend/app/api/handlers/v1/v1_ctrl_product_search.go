@@ -504,6 +504,8 @@ func (ctrl *V1Controller) HandleProductSearchFromBarcode(conf config.BarcodeAPIC
 			products = append(products, ps3...)
 		}
 
+		products = append(products, aliyunBarcodeProducts(q.EAN)...)
+
 		// Retrieve images if possible
 		for i := range products {
 			p := &products[i]
