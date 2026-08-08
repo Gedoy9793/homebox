@@ -157,6 +157,8 @@
             },
             "label_maker": {
                 "bluetooth": {
+                    "auto_print": "Print label after creating",
+                    "auto_print_not_connected": "Connect a label printer first to print after creating",
                     "change_printer": "Change printer",
                     "choose_printer": "Choose printer",
                     "connect_failed": "Couldn't connect to the printer",

@@ -157,6 +157,8 @@
             },
             "label_maker": {
                 "bluetooth": {
+                    "auto_print": "创建后打印标签",
+                    "auto_print_not_connected": "请先连接标签打印机，才能在创建后打印",
                     "change_printer": "更换打印机",
                     "choose_printer": "选择打印机",
                     "connect_failed": "连接打印机失败",

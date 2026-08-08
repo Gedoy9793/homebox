@@ -194,7 +194,7 @@
         :existing-count="form.photos.length"
         @selected="appendPhotos"
       />
-      <div class="mt-4 flex flex-row-reverse">
+      <div class="mt-4 flex flex-row-reverse items-center gap-2">
         <ButtonGroup>
           <Button :disabled="loading" type="submit" class="group">
             <div class="relative mx-2">
@@ -211,6 +211,7 @@
             {{ $t("global.create_and_add") }}
           </Button>
         </ButtonGroup>
+        <BleLabelAutoPrint ref="labelPrinter" class="mr-auto" />
       </div>
 
       <PhotoUploaderPreview
@@ -229,6 +230,7 @@
   import { toast } from "@/components/ui/sonner";
   import { Button, ButtonGroup } from "~/components/ui/button";
   import BaseModal from "@/components/App/CreateModal.vue";
+  import BleLabelAutoPrint from "@/components/global/BleLabelAutoPrint.vue";
   import type {
     EntityCreate,
     EntityTemplateOut,
@@ -314,6 +316,7 @@
   });
 
   const nameInput = ref<HTMLInputElement | null>(null);
+  const labelPrinter = ref<InstanceType<typeof BleLabelAutoPrint> | null>(null);
 
   // Entity type selection
   const entityTypes = computed(() => entityTypeStore.allTypes);
@@ -702,6 +705,11 @@
         toast.success(t("components.entity.create_modal.toast.upload_success", { count: form.photos.length }));
       }
     }
+
+    // Awaited so that creating the next item cannot start a second print while
+    // this one is still going out. Failures are reported by the component and
+    // never bubble: the item is saved either way.
+    await labelPrinter.value?.printFor(data.id, selectedEntityType.value?.isLocation ? "location" : "entity");
 
     form.name = "";
     form.quantity = 1;

@@ -8,7 +8,7 @@
 // fed one through printBitmap.
 
 import { ref } from "vue";
-import type { LabelItem, LabelSpec } from "~~/lib/labels/label-spec";
+import { readLabelSpecFromPng, type LabelItem, type LabelSpec } from "~~/lib/labels/label-spec";
 
 type LpapiModule = typeof import("lpapi-ble");
 type Lpapi = InstanceType<LpapiModule["LPAPI"]>;
@@ -53,6 +53,15 @@ function assertOk(lpapi: LpapiModule, response: LpapiResponse): void {
   if (response.statusCode !== RESULT_OK) {
     throw new Error(describe(lpapi, response));
   }
+}
+
+/** The SDK takes images as data URIs, so a fetched PNG has to be re-encoded. */
+export function pngDataURL(buffer: ArrayBuffer): string {
+  let binary = "";
+  for (const byte of new Uint8Array(buffer)) {
+    binary += String.fromCharCode(byte);
+  }
+  return `data:image/png;base64,${btoa(binary)}`;
 }
 
 function fontStyle(item: { bold?: boolean; italic?: boolean; underline?: boolean }): number {
@@ -161,14 +170,18 @@ async function drawItem(lpapi: LpapiModule, api: Lpapi, item: LabelItem): Promis
   }
 }
 
+// One printer, one connection, one set of state — shared by every component that
+// asks for it. A Bluetooth connection belongs to the page, not to a dialog: the
+// user connects once and then prints from wherever, and pairing again for each
+// component would make printing while creating items unusable.
+const available = ref(isWebBluetoothAvailable());
+const connected = ref(false);
+const printerName = ref("");
+const busy = ref(false);
+
+let instance: Lpapi | undefined;
+
 export function useBleLabelPrinter() {
-  const available = ref(isWebBluetoothAvailable());
-  const connected = ref(false);
-  const printerName = ref("");
-  const busy = ref(false);
-
-  let instance: Lpapi | undefined;
-
   async function getApi(): Promise<{ lpapi: LpapiModule; api: Lpapi }> {
     const lpapi = await loadLpapi();
     instance ??= lpapi.LPAPI.getInstance({ webBLE: true });
@@ -267,6 +280,35 @@ export function useBleLabelPrinter() {
     });
   }
 
+  /**
+   * Prints the label served at url: the embedded layout when it has one, the
+   * image itself otherwise. fallback gives the paper size to use for that
+   * second case, where nothing tells us how big the label is.
+   */
+  async function printLabelUrl(
+    url: string,
+    options: { copies?: number; fallback?: { width: number; height: number } } = {}
+  ): Promise<void> {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`label request failed with status ${response.status}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    const spec = await readLabelSpecFromPng(buffer);
+
+    if (spec) {
+      await printSpec(spec, options.copies);
+      return;
+    }
+
+    if (!options.fallback) {
+      throw new Error("the label carries no layout and no paper size was given");
+    }
+
+    await printBitmap(pngDataURL(buffer), options.fallback.width, options.fallback.height, options.copies);
+  }
+
   async function disconnect(): Promise<void> {
     if (!instance) {
       return;
@@ -285,6 +327,7 @@ export function useBleLabelPrinter() {
     selectPrinter,
     printSpec,
     printBitmap,
+    printLabelUrl,
     disconnect,
   };
 }

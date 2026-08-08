@@ -35,14 +35,6 @@
     return err instanceof Error ? err.message : String(err);
   }
 
-  function toDataURL(buffer: ArrayBuffer): string {
-    let binary = "";
-    for (const byte of new Uint8Array(buffer)) {
-      binary += String.fromCharCode(byte);
-    }
-    return `data:image/png;base64,${btoa(binary)}`;
-  }
-
   /**
    * Reads the label layout embedded in the rendered label. Labels without one
    * are printed as the bitmap they are, which needs a paper size from the user.
@@ -58,7 +50,7 @@
 
       const buffer = await response.arrayBuffer();
       spec.value = await readLabelSpecFromPng(buffer);
-      bitmap.value = spec.value ? "" : toDataURL(buffer);
+      bitmap.value = spec.value ? "" : pngDataURL(buffer);
     } catch (err) {
       console.error("Failed to read label layout:", err);
       spec.value = undefined;
