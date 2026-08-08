@@ -1,0 +1,153 @@
+package localsvc
+
+import (
+	"context"
+	"testing"
+
+	"github.com/sysadminsmedia/homebox/backend/internal/data/ent"
+
+	_ "github.com/sysadminsmedia/homebox/backend/pkgs/cgofreesqlite"
+)
+
+func TestEntityPredicateReadsLabelURLs(t *testing.T) {
+	accepted := []string{
+		"https://homebox.example.com/item/0198f0a1-0000-7000-8000-000000000001",
+		"https://homebox.example.com/location/0198f0a1-0000-7000-8000-000000000001",
+		"https://homebox.example.com/a/000-042",
+		"http://localhost:7745/a/42",
+		"https://homebox.example.com/item/0198f0a1-0000-7000-8000-000000000001/",
+	}
+	rejected := []string{
+		"",
+		"https://homebox.example.com/",
+		"https://homebox.example.com/item/not-a-uuid",
+		"https://homebox.example.com/a/not-a-number",
+		"https://homebox.example.com/a/0",
+		"https://homebox.example.com/unknown/0198f0a1-0000-7000-8000-000000000001",
+	}
+
+	for _, labelURL := range accepted {
+		if _, ok := entityPredicate(labelURL); !ok {
+			t.Errorf("expected %q to be understood", labelURL)
+		}
+	}
+	for _, labelURL := range rejected {
+		if _, ok := entityPredicate(labelURL); ok {
+			t.Errorf("expected %q to be rejected", labelURL)
+		}
+	}
+}
+
+func TestProfileForTypeName(t *testing.T) {
+	t.Setenv(EnvProfileMap, "")
+
+	// Recognised without any configuration.
+	for _, typeName := range []string{"Cable", "network cable", "线缆", "Patch lead"} {
+		if got := profileForTypeName(typeName); got != profileCable {
+			t.Errorf("expected %q to use the cable profile, got %q", typeName, got)
+		}
+	}
+
+	// Anything else leaves the choice to the configuration.
+	for _, typeName := range []string{"", "Item", "Shelf"} {
+		if got := profileForTypeName(typeName); got != "" {
+			t.Errorf("expected %q to make no choice, got %q", typeName, got)
+		}
+	}
+}
+
+func TestProfileForTypeNameHonoursMapping(t *testing.T) {
+	t.Setenv(EnvProfileMap, " 网线=cable , Shelf=standard ")
+
+	if got := profileForTypeName("网线"); got != profileCable {
+		t.Fatalf("expected the mapping to apply, got %q", got)
+	}
+	// Case-insensitive, and a mapping wins over the built-in guess.
+	if got := profileForTypeName("SHELF"); got != profileStandard {
+		t.Fatalf("expected the mapping to apply, got %q", got)
+	}
+	if got := profileForTypeName("Cable"); got != profileCable {
+		t.Fatalf("expected the built-in guess to survive, got %q", got)
+	}
+}
+
+func TestProfileMapIgnoresMalformedEntries(t *testing.T) {
+	t.Setenv(EnvProfileMap, "no-equals-sign,Cable=cable")
+
+	mapping := profileMap()
+	if len(mapping) != 1 || mapping["cable"] != profileCable {
+		t.Fatalf("unexpected mapping %+v", mapping)
+	}
+}
+
+// Without Bind the service still works; it just cannot pick per type.
+func TestEntityTypeNameWithoutDatabase(t *testing.T) {
+	database.Store(nil)
+
+	if got := entityTypeName(context.Background(), "https://homebox.example.com/a/000-042"); got != "" {
+		t.Fatalf("expected no type without a database, got %q", got)
+	}
+}
+
+// The lookup runs against a real schema, because the whole point is that the URL
+// in the QR code leads back to the right row.
+func TestEntityTypeNameResolvesFromDatabase(t *testing.T) {
+	ctx := context.Background()
+
+	client, err := ent.Open("sqlite3", "file:localsvc-types?mode=memory&cache=shared&_fk=1&_time_format=sqlite")
+	if err != nil {
+		t.Fatalf("could not open the test database: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+		database.Store(nil)
+	})
+
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("could not create the schema: %v", err)
+	}
+
+	group, err := client.Group.Create().SetName("test").Save(ctx)
+	if err != nil {
+		t.Fatalf("could not create a group: %v", err)
+	}
+
+	entityType, err := client.EntityType.Create().SetName("线缆").SetGroup(group).Save(ctx)
+	if err != nil {
+		t.Fatalf("could not create an entity type: %v", err)
+	}
+
+	record, err := client.Entity.Create().
+		SetName("Office AP uplink").
+		SetGroup(group).
+		SetEntityType(entityType).
+		SetAssetID(42).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("could not create an entity: %v", err)
+	}
+
+	Bind(client)
+
+	// Both URL forms Homebox puts in a QR code have to resolve.
+	for _, labelURL := range []string{
+		"https://homebox.example.com/item/" + record.ID.String(),
+		"https://homebox.example.com/a/000-042",
+	} {
+		if got := entityTypeName(ctx, labelURL); got != "线缆" {
+			t.Errorf("expected %q to resolve to 线缆, got %q", labelURL, got)
+		}
+	}
+
+	// A record that does not exist must not fail the label.
+	unknown := "https://homebox.example.com/a/999-999"
+	if got := entityTypeName(ctx, unknown); got != "" {
+		t.Errorf("expected no type for %q, got %q", unknown, got)
+	}
+
+	// And the whole point: this picks the label stock.
+	t.Setenv(EnvProfileMap, "")
+	if got := profileForLabelURL(ctx, "https://homebox.example.com/a/000-042"); got != profileCable {
+		t.Errorf("expected a cable flag, got %q", got)
+	}
+}

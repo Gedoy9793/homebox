@@ -23,6 +23,7 @@ import (
 	"github.com/sysadminsmedia/homebox/backend/internal/sys/otel"
 	"github.com/sysadminsmedia/homebox/backend/internal/sys/validate"
 	"github.com/sysadminsmedia/homebox/backend/internal/web/mid"
+	"github.com/sysadminsmedia/homebox/backend/localsvc"
 	"github.com/sysadminsmedia/homebox/backend/pkgs/hasher"
 
 	"github.com/go-chi/chi/v5"
@@ -173,6 +174,9 @@ func run(cfg *config.Config) error {
 	app.bus = eventbus.New()
 	app.db = c
 	app.repos = repo.New(c, app.bus, cfg.Storage, cfg.Database.PubSubConnString, cfg.Thumbnail)
+
+	// Lets the bundled label service choose label stock per entity type.
+	localsvc.Bind(c)
 
 	// Attachment-key escaping in fileblob only flattens paths on Windows
 	// (where os.PathSeparator is "\"), so the legacy-path rename is a Windows-

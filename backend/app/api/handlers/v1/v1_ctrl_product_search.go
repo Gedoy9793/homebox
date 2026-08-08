@@ -319,6 +319,10 @@ func normalizeOpenFactsImageURL(imageURL string) string {
 		return ""
 	}
 
+	if isLoopbackImageURL(u) {
+		return u.String()
+	}
+
 	switch u.Scheme {
 	case "http":
 		u.Scheme = schemeHTTPS
@@ -504,8 +508,6 @@ func (ctrl *V1Controller) HandleProductSearchFromBarcode(conf config.BarcodeAPIC
 			products = append(products, ps3...)
 		}
 
-		products = append(products, aliyunBarcodeProducts(q.EAN)...)
-
 		// Retrieve images if possible
 		for i := range products {
 			p := &products[i]
@@ -516,7 +518,7 @@ func (ctrl *V1Controller) HandleProductSearchFromBarcode(conf config.BarcodeAPIC
 
 			// Validate URL is HTTPS
 			u, err := url.Parse(p.ImageURL)
-			if err != nil || u.Scheme != schemeHTTPS {
+			if err != nil || (u.Scheme != schemeHTTPS && !isLoopbackImageURL(u)) {
 				log.Warn().Msg("Skipping non-HTTPS image URL: " + p.ImageURL)
 				continue
 			}
