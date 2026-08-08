@@ -156,6 +156,26 @@
                 "yesterday": "yesterday"
             },
             "label_maker": {
+                "bluetooth": {
+                    "change_printer": "Change printer",
+                    "choose_printer": "Choose printer",
+                    "connect_failed": "Couldn't connect to the printer",
+                    "connected": "Connected to {name}",
+                    "copies": "Copies",
+                    "disconnect": "Disconnect",
+                    "height": "Height (mm)",
+                    "layout_error": "Couldn't read the label layout: {error}",
+                    "layout_found": "Label layout from the server: {width} × {height} mm",
+                    "layout_missing": "This label has no embedded layout, so the preview image is printed as-is",
+                    "not_connected": "No printer connected",
+                    "print": "Print over Bluetooth",
+                    "print_failed": "Bluetooth printing failed",
+                    "print_success": "Label sent to the printer",
+                    "reading_layout": "Reading the label layout…",
+                    "title": "Bluetooth printer",
+                    "unsupported": "Bluetooth printing needs Chrome or Edge on an HTTPS connection",
+                    "width": "Width (mm)"
+                },
                 "browser_print": "Print from Browser",
                 "confirm_description": "Are you sure you want to print this label?",
                 "download": "Download Label",

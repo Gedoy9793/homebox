@@ -2,6 +2,7 @@
   import { useI18n } from "vue-i18n";
   import { type QueryValue, route } from "../../lib/api/base/urls";
   import PageQRCode from "./PageQRCode.vue";
+  import BleLabelPrint from "./BleLabelPrint.vue";
   import { DialogID } from "@/components/ui/dialog-provider/utils";
   import { toast } from "@/components/ui/sonner";
   import MdiLoading from "~icons/mdi/loading";
@@ -110,6 +111,7 @@
           </DialogDescription>
         </DialogHeader>
         <img :src="getLabelUrl(false)" />
+        <BleLabelPrint :label-url="getLabelUrl(false)" />
         <DialogFooter>
           <ButtonGroup>
             <Button v-if="status?.labelPrinting || false" type="submit" :disabled="serverPrinting" @click="serverPrint">

@@ -101,6 +101,9 @@ importers:
       http-proxy:
         specifier: ^1.18.1
         version: 1.18.1
+      lpapi-ble:
+        specifier: ^1.7.260618
+        version: 1.7.260618
       lucide-vue-next:
         specifier: ^0.542.0
         version: 0.542.0(vue@3.5.20(typescript@5.9.2))
@@ -2808,6 +2811,9 @@ packages:
   '@vue/compiler-dom@3.5.40':
     resolution: {integrity: sha512-pwkx4vqlqOspFstrcmzwkKLePVMD3PT65imRzLhanU2V1Fj4K13g6OXjanOyzw3aTAuRk84BOmY8f3rEHqPaVA==}
 
+  '@vue/compiler-sfc@2.7.16':
+    resolution: {integrity: sha512-KWhJ9k5nXuNtygPU7+t1rX6baZeqOYLEforUPjgNDBnLicfHCoi48H87Q8XyLZOrNNsmhuwKqtpDQWjEFe6Ekg==}
+
   '@vue/compiler-sfc@3.5.20':
     resolution: {integrity: sha512-SFcxapQc0/feWiSBfkGsa1v4DOrnMAQSYuvDMpEaxbpH5dKbnEM5KobSNSgU+1MbHCl+9ftm7oQWxvwDB6iBfw==}
 
@@ -3430,6 +3436,9 @@ packages:
   core-js-compat@3.49.0:
     resolution: {integrity: sha512-VQXt1jr9cBz03b331DFDCCP90b3fanciLkgiOoy8SBHy06gNf+vQ1A3WFLqG7I8TipYIKeYK9wxd0tUrvHcOZA==}
 
+  core-js@3.50.0:
+    resolution: {integrity: sha512-BRWgOLKkFeCgRudR6zrs8p9XJZcE14grzKMMssoYrk6krtuEZ7MTKPIY5RzOnqsEKIR9kst7wNzphttraT+Yqw==}
+
   core-util-is@1.0.3:
     resolution: {integrity: sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ==}
 
@@ -3707,6 +3716,12 @@ packages:
 
   duplexer@0.1.2:
     resolution: {integrity: sha512-jtD6YG370ZCIi/9GTaJKQxWTZD045+4R4hTk/x1UyoqadyJ9x9CgSi1RlVDQF8U2sxLLSnFkCaMihqljHIWgMg==}
+
+  dz-barcode-base@1.0.1:
+    resolution: {integrity: sha512-z2bfkBKqxgQLIMdLdIlXZhTTOPf6pq0uUijRKfq7UpebEXxq7dMNe8qBlNVaqxiL/e5bkYPIBFMpnr+0Q0N6oQ==}
+
+  dz-canvas@1.0.260618:
+    resolution: {integrity: sha512-3yrfDtDHCLijXzRJRS5wbrAINqyb9NjCKAJEpxnOu2UkGx6MoMEw0N3cJx2GH8MMb8rYY+IiTV0vi6o8XAeUWw==}
 
   eastasianwidth@0.2.0:
     resolution: {integrity: sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA==}
@@ -4818,6 +4833,9 @@ packages:
   loupe@3.2.1:
     resolution: {integrity: sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ==}
 
+  lpapi-ble@1.7.260618:
+    resolution: {integrity: sha512-6mJdO7Gdayx5gfB23jjWgJkyyTzu7W9oiXvS+vha4y5WLam0FNwXrVsl0y5VLZoj8s7VpbiMScwrbP+V4Nu0gA==}
+
   lru-cache@10.4.3:
     resolution: {integrity: sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==}
 
@@ -5571,6 +5589,11 @@ packages:
   prettier-linter-helpers@1.0.1:
     resolution: {integrity: sha512-SxToR7P8Y2lWmv/kTzVLC1t/GDI2WGjMwNhLLE9qtH8Q13C+aEmuRlzDst4Up4s0Wc8sF2M+J57iB3cMLqftfg==}
     engines: {node: '>=6.0.0'}
+
+  prettier@2.8.8:
+    resolution: {integrity: sha512-tdN8qQGvNjw4CHbY+XXk0JgCXn9QiF21a55rBe5LJAU+kDyC4WQn4+awm2Xfk2lQMk5fKup9XgzTZtGkjBdP9Q==}
+    engines: {node: '>=10.13.0'}
+    hasBin: true
 
   prettier@3.9.6:
     resolution: {integrity: sha512-OpN0zzVdiaiAhxpuuj5efpIS4sY9j7bY6uR5mnj5yPzGkdkjNKSJeUThPb60Jw29QuAZgA4o+/iB49kFiaBX6g==}
@@ -6816,6 +6839,10 @@ packages:
     hasBin: true
     peerDependencies:
       typescript: '>=5.0.0'
+
+  vue@2.7.16:
+    resolution: {integrity: sha512-4gCtFXaAA3zYZdTp5s4Hl2sozuySsgz4jy1EnpBHNfpMa9dK1ZCG7viqBPCwXtmgc8nHqUsAu3G4gtmXkkY3Sw==}
+    deprecated: Vue 2 has reached EOL and is no longer actively maintained. See https://v2.vuejs.org/eol/ for more details.
 
   vue@3.5.20:
     resolution: {integrity: sha512-2sBz0x/wis5TkF1XZ2vH25zWq3G1bFEPOfkBcx2ikowmphoQsPH6X0V3mmPCXA2K1N/XGTnifVyDQP4GfDDeQw==}
@@ -9959,6 +9986,14 @@ snapshots:
       '@vue/compiler-core': 3.5.40
       '@vue/shared': 3.5.40
 
+  '@vue/compiler-sfc@2.7.16':
+    dependencies:
+      '@babel/parser': 7.29.8
+      postcss: 8.5.25
+      source-map: 0.6.1
+    optionalDependencies:
+      prettier: 2.8.8
+
   '@vue/compiler-sfc@3.5.20':
     dependencies:
       '@babel/parser': 7.29.8
@@ -10667,6 +10702,8 @@ snapshots:
     dependencies:
       browserslist: 4.28.7
 
+  core-js@3.50.0: {}
+
   core-util-is@1.0.3: {}
 
   crc-32@1.2.2: {}
@@ -10918,6 +10955,14 @@ snapshots:
       gopd: 1.2.0
 
   duplexer@0.1.2: {}
+
+  dz-barcode-base@1.0.1: {}
+
+  dz-canvas@1.0.260618:
+    dependencies:
+      core-js: 3.50.0
+      dz-barcode-base: 1.0.1
+      vue: 2.7.16
 
   eastasianwidth@0.2.0: {}
 
@@ -12188,6 +12233,12 @@ snapshots:
 
   loupe@3.2.1: {}
 
+  lpapi-ble@1.7.260618:
+    dependencies:
+      core-js: 3.50.0
+      dz-canvas: 1.0.260618
+      vue: 2.7.16
+
   lru-cache@10.4.3: {}
 
   lru-cache@11.5.2: {}
@@ -13155,6 +13206,9 @@ snapshots:
   prettier-linter-helpers@1.0.1:
     dependencies:
       fast-diff: 1.3.0
+
+  prettier@2.8.8:
+    optional: true
 
   prettier@3.9.6: {}
 
@@ -14530,6 +14584,11 @@ snapshots:
       '@volar/typescript': 2.4.23
       '@vue/language-core': 3.0.6(typescript@5.9.2)
       typescript: 5.9.2
+
+  vue@2.7.16:
+    dependencies:
+      '@vue/compiler-sfc': 2.7.16
+      csstype: 3.2.3
 
   vue@3.5.20(typescript@5.9.2):
     dependencies:

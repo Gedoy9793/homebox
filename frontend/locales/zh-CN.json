@@ -156,6 +156,26 @@
                 "yesterday": "昨天"
             },
             "label_maker": {
+                "bluetooth": {
+                    "change_printer": "更换打印机",
+                    "choose_printer": "选择打印机",
+                    "connect_failed": "连接打印机失败",
+                    "connected": "已连接 {name}",
+                    "copies": "份数",
+                    "disconnect": "断开连接",
+                    "height": "高度（毫米）",
+                    "layout_error": "读取标签排版失败：{error}",
+                    "layout_found": "服务端提供的标签排版：{width} × {height} 毫米",
+                    "layout_missing": "此标签未内嵌排版数据，将直接打印预览图片",
+                    "not_connected": "未连接打印机",
+                    "print": "蓝牙打印",
+                    "print_failed": "蓝牙打印失败",
+                    "print_success": "标签已发送到打印机",
+                    "reading_layout": "正在读取标签排版…",
+                    "title": "蓝牙打印机",
+                    "unsupported": "蓝牙打印需要在 HTTPS 下使用 Chrome 或 Edge 浏览器",
+                    "width": "宽度（毫米）"
+                },
                 "browser_print": "在浏览器内打印",
                 "confirm_description": "确定要打印这个标签吗？",
                 "download": "下载标签",
