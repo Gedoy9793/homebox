@@ -181,6 +181,7 @@ func registerRecurringTasks(app *app, cfg *config.Config, runner *graceful.Runne
 	if imgCfg := imagesearch.LoadConfig(); imgCfg.Enabled() {
 		client := imagesearch.NewClient(imgCfg)
 		syncer := imagesearch.NewSyncer(client, app.repos)
+		imagesearch.WireAttachmentHooks(app.repos.Attachments, syncer)
 		log.Info().
 			Str("url", imgCfg.URL).
 			Dur("interval", imgCfg.SyncInterval).

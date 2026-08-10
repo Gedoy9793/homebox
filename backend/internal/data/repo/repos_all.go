@@ -25,7 +25,7 @@ type AllRepos struct {
 }
 
 func New(db *ent.Client, bus *eventbus.EventBus, storage config.Storage, pubSubConn string, thumbnail config.Thumbnail) *AllRepos {
-	attachments := &AttachmentRepo{db, storage, pubSubConn, thumbnail}
+	attachments := &AttachmentRepo{db: db, storage: storage, pubSubConn: pubSubConn, thumbnail: thumbnail}
 	return &AllRepos{
 		Users:               &UserRepository{db},
 		AuthTokens:          &TokenRepository{db},

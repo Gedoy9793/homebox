@@ -622,6 +622,7 @@
         "insured": "Insured",
         "invalid_asset_id": "Invalid Asset ID",
         "image_search": {
+            "capture_search": "Capture & Search",
             "choose_image": "Choose Image",
             "description": "Take a photo or choose an image to find similar items in your inventory.",
             "entry": "Search by Image",

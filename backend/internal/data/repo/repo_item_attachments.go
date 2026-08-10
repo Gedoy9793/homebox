@@ -56,6 +56,20 @@ type AttachmentRepo struct {
 	storage    config.Storage
 	pubSubConn string
 	thumbnail  config.Thumbnail
+
+	// Optional hooks for image-search indexing (set via SetPhotoIndexHooks).
+	onPhotoCreated func(groupID, entityID, attachmentID uuid.UUID, path, title string)
+	onPhotoDeleted func(groupID, attachmentID uuid.UUID)
+}
+
+// SetPhotoIndexHooks registers callbacks invoked after a local photo attachment
+// is created or deleted. Used by the image-search bridge; nil means disabled.
+func (r *AttachmentRepo) SetPhotoIndexHooks(
+	onCreated func(groupID, entityID, attachmentID uuid.UUID, path, title string),
+	onDeleted func(groupID, attachmentID uuid.UUID),
+) {
+	r.onPhotoCreated = onCreated
+	r.onPhotoDeleted = onDeleted
 }
 
 type (
@@ -462,6 +476,10 @@ func (r *AttachmentRepo) Create(ctx context.Context, itemID uuid.UUID, doc ItemC
 		}
 	}
 
+	if typ == attachment.TypePhoto && r.onPhotoCreated != nil && !isExternalLink(attachmentDb.MimeType) {
+		r.onPhotoCreated(itemGroup.ID, itemID, attachmentDb.ID, attachmentDb.Path, attachmentDb.Title)
+	}
+
 	return attachmentDb, nil
 }
 
@@ -587,6 +605,8 @@ func (r *AttachmentRepo) Delete(ctx context.Context, gid uuid.UUID, id uuid.UUID
 		return err
 	}
 
+	wasPhoto := doc.Type == attachment.TypePhoto && !isExternalLink(doc.MimeType)
+
 	if isExternalLink(doc.MimeType) {
 		return r.db.Attachment.DeleteOneID(id).Exec(ctx)
 	}
@@ -636,7 +656,11 @@ func (r *AttachmentRepo) Delete(ctx context.Context, gid uuid.UUID, id uuid.UUID
 		}
 	}
 
-	return r.db.Attachment.DeleteOneID(id).Exec(ctx)
+	err = r.db.Attachment.DeleteOneID(id).Exec(ctx)
+	if err == nil && wasPhoto && r.onPhotoDeleted != nil {
+		r.onPhotoDeleted(gid, id)
+	}
+	return err
 }
 
 func (r *AttachmentRepo) Rename(ctx context.Context, gid uuid.UUID, id uuid.UUID, title string) (*ent.Attachment, error) {

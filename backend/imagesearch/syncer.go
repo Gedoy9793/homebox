@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/sysadminsmedia/homebox/backend/internal/data/repo"
 	"gocloud.dev/blob"
 )
+
+const indexWorkers = 4
 
 // Syncer keeps the sidecar index aligned with local photo attachments.
 type Syncer struct {
@@ -47,7 +51,19 @@ func (s *Syncer) SyncAll(ctx context.Context) error {
 	return nil
 }
 
+// IndexPhoto pushes a single photo into the sidecar (used by create hooks).
+func (s *Syncer) IndexPhoto(ctx context.Context, groupID uuid.UUID, att repo.IndexablePhoto) error {
+	bucket, err := blob.OpenBucket(ctx, s.repos.Attachments.GetConnString())
+	if err != nil {
+		return fmt.Errorf("open bucket: %w", err)
+	}
+	defer func() { _ = bucket.Close() }()
+	return s.indexAttachment(ctx, bucket, groupID, att)
+}
+
 // SyncGroup diffs local photo attachments against the sidecar and applies upserts/deletes.
+// Already-indexed photos are skipped; only missing/extras are transferred, so steady-state
+// sync stays cheap even with large libraries. First-time indexing is O(n) embeddings.
 func (s *Syncer) SyncGroup(ctx context.Context, groupID uuid.UUID) (SyncStats, error) {
 	var stats SyncStats
 
@@ -86,27 +102,71 @@ func (s *Syncer) SyncGroup(ctx context.Context, groupID uuid.UUID) (SyncStats, e
 		stats.Deleted++
 	}
 
+	var missing []repo.IndexablePhoto
+	for id, att := range localByID {
+		if _, ok := remoteSet[id]; ok {
+			continue
+		}
+		missing = append(missing, att)
+	}
+	if len(missing) == 0 {
+		log.Debug().
+			Str("group_id", groupID.String()).
+			Int("indexed", stats.Indexed).
+			Int("deleted", stats.Deleted).
+			Msg("image-search sync complete")
+		return stats, nil
+	}
+
 	bucket, err := blob.OpenBucket(ctx, s.repos.Attachments.GetConnString())
 	if err != nil {
 		return stats, fmt.Errorf("open bucket: %w", err)
 	}
 	defer func() { _ = bucket.Close() }()
 
-	// Upsert missing local photos.
-	for id, att := range localByID {
-		if _, ok := remoteSet[id]; ok {
-			continue
-		}
-		if err := s.indexAttachment(ctx, bucket, groupID, att); err != nil {
-			log.Warn().Err(err).
-				Str("group_id", groupID.String()).
-				Str("attachment_id", id.String()).
-				Msg("image-search index failed")
-			stats.Skipped++
-			continue
-		}
-		stats.Indexed++
+	workers := indexWorkers
+	if len(missing) < workers {
+		workers = len(missing)
 	}
+	jobs := make(chan repo.IndexablePhoto)
+	var indexed, skipped atomic.Int32
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for att := range jobs {
+				if err := ctx.Err(); err != nil {
+					skipped.Add(1)
+					continue
+				}
+				if err := s.indexAttachment(ctx, bucket, groupID, att); err != nil {
+					log.Warn().Err(err).
+						Str("group_id", groupID.String()).
+						Str("attachment_id", att.ID.String()).
+						Msg("image-search index failed")
+					skipped.Add(1)
+					continue
+				}
+				indexed.Add(1)
+			}
+		}()
+	}
+	for _, att := range missing {
+		select {
+		case <-ctx.Done():
+			close(jobs)
+			wg.Wait()
+			stats.Indexed += int(indexed.Load())
+			stats.Skipped += int(skipped.Load())
+			return stats, ctx.Err()
+		case jobs <- att:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	stats.Indexed += int(indexed.Load())
+	stats.Skipped += int(skipped.Load())
 
 	log.Debug().
 		Str("group_id", groupID.String()).

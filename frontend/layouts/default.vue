@@ -13,6 +13,7 @@
     <ItemBarcodeModal />
     <AppQuickMenuModal :actions="quickMenuActions" />
     <AppScannerModal />
+    <AppImageSearchModal />
     <CollectionCreateModal />
     <CollectionJoinModal />
     <CollectionInviteCreateModal />
@@ -135,7 +136,7 @@
                 </Collapsible>
               </template>
 
-              <!-- makes scanner accessible easily if using legacy header -->
+              <!-- makes scanner / image-search accessible easily if using legacy header -->
               <SidebarMenuItem v-if="preferences.displayLegacyHeader">
                 <SidebarMenuButton
                   :class="{
@@ -146,6 +147,18 @@
                 >
                   <MdiQrcodeScan />
                   <span>{{ $t("menu.scanner") }}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem v-if="preferences.displayLegacyHeader">
+                <SidebarMenuButton
+                  :class="{
+                    'text-nowrap': typeof locale === 'string' && locale.startsWith('zh-'),
+                  }"
+                  :tooltip="$t('items.image_search.entry')"
+                  @click.prevent="openImageSearch"
+                >
+                  <MdiImageSearch />
+                  <span>{{ $t("items.image_search.entry") }}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -206,6 +219,11 @@
                   <MdiQrcodeScan />
                 </Button>
               </div>
+              <div>
+                <Button size="icon" :title="$t('items.image_search.entry')" @click="openImageSearch">
+                  <MdiImageSearch />
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -246,6 +264,7 @@
   import MdiTagMultiple from "~icons/mdi/tag-multiple";
   import MdiMagnify from "~icons/mdi/magnify";
   import MdiQrcodeScan from "~icons/mdi/qrcode-scan";
+  import MdiImageSearch from "~icons/mdi/image-search";
   import MdiAccount from "~icons/mdi/account";
   import MdiCog from "~icons/mdi/cog";
   import MdiWrench from "~icons/mdi/wrench";
@@ -293,6 +312,7 @@
   import ItemBarcodeModal from "~/components/Item/BarcodeModal.vue";
   import AppQuickMenuModal from "~/components/App/QuickMenuModal.vue";
   import AppScannerModal from "~/components/App/ScannerModal.vue";
+  import AppImageSearchModal from "~/components/App/ImageSearchModal.vue";
   import AppLogo from "~/components/App/Logo.vue";
   import AppHeaderDecor from "~/components/App/HeaderDecor.vue";
   import AppHeaderText from "~/components/App/HeaderText.vue";
@@ -334,13 +354,13 @@
     }
   };
 
-  const openScanner = () => {
-    // request permission
+  const openCameraDialog = (dialogId: typeof DialogID.Scanner | typeof DialogID.ImageSearch) => {
     if (navigator.mediaDevices) {
       navigator.mediaDevices
         .getUserMedia({ video: true })
-        .then(() => {
-          openDialog(DialogID.Scanner);
+        .then(stream => {
+          stream.getTracks().forEach(track => track.stop());
+          openDialog(dialogId);
         })
         .catch(err => {
           console.error(err);
@@ -350,6 +370,9 @@
       toast.error(t("scanner.unsupported"));
     }
   };
+
+  const openScanner = () => openCameraDialog(DialogID.Scanner);
+  const openImageSearch = () => openCameraDialog(DialogID.ImageSearch);
 
   // Preload currency format
   useFormatCurrency();

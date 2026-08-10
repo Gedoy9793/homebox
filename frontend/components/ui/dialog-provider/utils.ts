@@ -31,6 +31,7 @@ export enum DialogID {
   ProductImport = "product-import",
   QuickMenu = "quick-menu",
   Scanner = "scanner",
+  ImageSearch = "image-search",
   PageQRCode = "page-qr-code",
   UpdateTag = "update-tag",
   UpdateLocation = "update-location",

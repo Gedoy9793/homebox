@@ -576,6 +576,7 @@
         "insured": "保险",
         "invalid_asset_id": "无效的资产ID",
         "image_search": {
+            "capture_search": "拍照搜索",
             "choose_image": "选择图片",
             "description": "拍照或选择图片，在库存中查找相似物品。",
             "entry": "以图搜物",
