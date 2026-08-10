@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/sysadminsmedia/homebox/backend/internal/data/ent"
 
 	_ "github.com/sysadminsmedia/homebox/backend/pkgs/cgofreesqlite"
@@ -13,7 +14,7 @@ func TestEntityPredicateReadsLabelURLs(t *testing.T) {
 	accepted := []string{
 		"https://homebox.example.com/item/0198f0a1-0000-7000-8000-000000000001",
 		"https://homebox.example.com/location/0198f0a1-0000-7000-8000-000000000001",
-		"https://homebox.example.com/a/000-042",
+		testAssetURL,
 		"http://localhost:7745/a/42",
 		"https://homebox.example.com/item/0198f0a1-0000-7000-8000-000000000001/",
 	}
@@ -84,17 +85,21 @@ func TestProfileMapIgnoresMalformedEntries(t *testing.T) {
 func TestEntityTypeNameWithoutDatabase(t *testing.T) {
 	database.Store(nil)
 
-	if got := lookupEntity(context.Background(), "https://homebox.example.com/a/000-042"); got != (entityRecord{}) {
+	if got := lookupEntity(context.Background(), testAssetURL); got != (entityRecord{}) {
 		t.Fatalf("expected nothing without a database, got %+v", got)
 	}
 }
 
-// The lookup runs against a real schema, because the whole point is that the URL
-// in the QR code leads back to the right row.
-func TestEntityTypeNameResolvesFromDatabase(t *testing.T) {
+// bindTestRecord sets up a real schema with one labelled entity inside a location
+// and binds it, so tests can check that a label URL leads back to the right row.
+// It returns the entity's ID; its asset ID is 42, i.e. "000-042".
+func bindTestRecord(t *testing.T, name string) uuid.UUID {
+	t.Helper()
+
 	ctx := context.Background()
 
-	client, err := ent.Open("sqlite3", "file:localsvc-types?mode=memory&cache=shared&_fk=1&_time_format=sqlite")
+	client, err := ent.Open("sqlite3",
+		"file:localsvc-"+name+"?mode=memory&cache=shared&_fk=1&_time_format=sqlite")
 	if err != nil {
 		t.Fatalf("could not open the test database: %v", err)
 	}
@@ -117,10 +122,20 @@ func TestEntityTypeNameResolvesFromDatabase(t *testing.T) {
 		t.Fatalf("could not create an entity type: %v", err)
 	}
 
+	location, err := client.Entity.Create().
+		SetName(testLocationName).
+		SetGroup(group).
+		SetEntityType(entityType).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("could not create a location: %v", err)
+	}
+
 	record, err := client.Entity.Create().
 		SetName("Office AP uplink").
 		SetGroup(group).
 		SetEntityType(entityType).
+		SetParent(location).
 		SetAssetID(42).
 		Save(ctx)
 	if err != nil {
@@ -129,18 +144,34 @@ func TestEntityTypeNameResolvesFromDatabase(t *testing.T) {
 
 	Bind(client)
 
-	// Both URL forms Homebox puts in a QR code have to resolve, and both have to
-	// yield the asset ID, which is the other thing the label needs.
+	return record.ID
+}
+
+// The lookup runs against a real schema, because the whole point is that the URL
+// in the QR code leads back to the right row.
+func TestLookupEntityResolvesFromDatabase(t *testing.T) {
+	ctx := context.Background()
+	recordID := bindTestRecord(t, "lookup")
+
+	// Both URL forms Homebox puts in a QR code have to resolve, and each has to
+	// yield everything the label prints: name, location, asset ID and type.
 	for _, labelURL := range []string{
-		"https://homebox.example.com/item/" + record.ID.String(),
-		"https://homebox.example.com/a/000-042",
+		"https://homebox.example.com/item/" + recordID.String(),
+		testAssetURL,
 	} {
 		got := lookupEntity(ctx, labelURL)
-		if got.typeName != "线缆" {
-			t.Errorf("expected %q to resolve to 线缆, got %q", labelURL, got.typeName)
+
+		want := entityRecord{
+			typeName: "线缆",
+			name:     "Office AP uplink",
+			location: testLocationName,
+			assetID:  42,
+		}
+		if got != want {
+			t.Errorf("expected %q to resolve to %+v, got %+v", labelURL, want, got)
 		}
 		if got.assetID.String() != "000-042" {
-			t.Errorf("expected %q to yield asset ID 000-042, got %q", labelURL, got.assetID.String())
+			t.Errorf("expected the asset ID to format as 000-042, got %q", got.assetID.String())
 		}
 	}
 
@@ -152,7 +183,7 @@ func TestEntityTypeNameResolvesFromDatabase(t *testing.T) {
 
 	// And the whole point: this picks the label stock.
 	t.Setenv(EnvProfileMap, "")
-	if got := profileForTypeName(lookupEntity(ctx, "https://homebox.example.com/a/000-042").typeName); got != profileCable {
+	if got := profileForTypeName(lookupEntity(ctx, testAssetURL).typeName); got != profileCable {
 		t.Errorf("expected a cable flag, got %q", got)
 	}
 }

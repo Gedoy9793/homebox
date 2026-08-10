@@ -17,9 +17,13 @@ import (
 
 // Stand-ins for what Homebox puts in the label title.
 const (
-	testAssetID  = "000-042"
-	testCableID  = "SW1-P24"
-	testItemName = "Netgear switch"
+	testAssetID      = "000-042"
+	testCableID      = "SW1-P24"
+	testItemName     = "Netgear switch"
+	testLocationName = "Rack 3"
+
+	// The label URL Homebox builds for the asset ID above.
+	testAssetURL = "https://homebox.example.com/a/000-042"
 )
 
 // embeddedSpec pulls the layout back out of a rendered label, the same way the
@@ -202,7 +206,7 @@ func TestHeadlineLeadsWithTheAssetID(t *testing.T) {
 func TestBothProfilesLeadWithTheAssetID(t *testing.T) {
 	request := labelRequest{
 		title:       testItemName,
-		description: "Rack 3",
+		description: testLocationName,
 		assetID:     testAssetID,
 		url:         "https://example.com/a/000-042",
 	}
@@ -563,8 +567,8 @@ func TestLabelEndpointServesPNGWithLayout(t *testing.T) {
 	query := url.Values{
 		"TitleText":             {testAssetID},
 		"DescriptionText":       {"Network switch"},
-		"AdditionalInformation": {"Rack 3"},
-		"URL":                   {"https://homebox.example.com/a/000-042"},
+		"AdditionalInformation": {testLocationName},
+		"URL":                   {testAssetURL},
 	}
 
 	response, err := http.Get(service.URL + LabelPath + "?" + query.Encode())
@@ -594,9 +598,57 @@ func TestLabelEndpointServesPNGWithLayout(t *testing.T) {
 	}
 	joined := strings.Join(text, " ")
 
-	for _, want := range []string{testAssetID, "Network switch", "Rack 3"} {
+	for _, want := range []string{testAssetID, "Network switch", testLocationName} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("expected %q on the label, got %q", want, joined)
+		}
+	}
+}
+
+// The label is built from the record, not from the text labelmaker assembled, so
+// it gets the name and the location as separate values instead of one string with
+// an English "Location: " in the middle of it.
+func TestLabelEndpointPrefersTheRecordOverTheRequestText(t *testing.T) {
+	bindTestRecord(t, "endpoint")
+
+	service := httptest.NewServer(newMux())
+	defer service.Close()
+
+	query := url.Values{
+		"URL":             {testAssetURL},
+		"TitleText":       {"ignored title"},
+		"DescriptionText": {"Location: ignored place"},
+		// The stock is chosen from the record's type too, and the test record is a
+		// 线缆, so ask for the small one to keep this about the text.
+		"LabelProfile": {profileStandard},
+	}
+
+	response, err := http.Get(service.URL + LabelPath + "?" + query.Encode())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	raw, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var text []string
+	for _, item := range itemsOfType(embeddedSpec(t, raw), itemText) {
+		text = append(text, item.Text)
+	}
+	joined := strings.Join(text, " ")
+
+	// The record's own fields, with no room wasted on the word "Location".
+	for _, want := range []string{testAssetID, "Office AP", testLocationName} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("expected %q on the label, got %q", want, joined)
+		}
+	}
+	for _, unwanted := range []string{"ignored", "Location"} {
+		if strings.Contains(joined, unwanted) {
+			t.Errorf("expected %q to be left out, got %q", unwanted, joined)
 		}
 	}
 }

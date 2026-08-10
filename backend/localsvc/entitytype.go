@@ -69,10 +69,16 @@ func profileForTypeName(typeName string) string {
 	return ""
 }
 
-// entityRecord is what a label needs to know about the thing it identifies,
-// beyond the text Homebox already passes in.
+// entityRecord is what a label needs to know about the thing it identifies.
+//
+// It is read from the database rather than taken from the text labelmaker
+// assembles, because that text is built for a sheet of paper: fields joined with
+// newlines and an English "Location: " in front of the parent. Reading the fields
+// separately lets the layout spend the 25mm it has on the values themselves.
 type entityRecord struct {
 	typeName string
+	name     string
+	location string
 	assetID  repo.AssetID
 }
 
@@ -93,17 +99,24 @@ func lookupEntity(ctx context.Context, labelURL string) entityRecord {
 	ctx, cancel := context.WithTimeout(ctx, typeLookupTimeout)
 	defer cancel()
 
-	found, err := client.Entity.Query().Where(match).WithEntityType().Only(ctx)
+	found, err := client.Entity.Query().Where(match).WithEntityType().WithParent().Only(ctx)
 	if err != nil {
 		// A label for a record that cannot be read is not worth failing over; the
-		// default label stock is used instead.
+		// caller falls back to the text it was given.
 		log.Debug().Err(err).Msg("Can not resolve the record behind a label")
 		return entityRecord{}
 	}
 
-	record := entityRecord{assetID: repo.AssetID(found.AssetID)}
+	record := entityRecord{
+		name:    found.Name,
+		assetID: repo.AssetID(found.AssetID),
+	}
+
 	if found.Edges.EntityType != nil {
 		record.typeName = found.Edges.EntityType.Name
+	}
+	if found.Edges.Parent != nil {
+		record.location = found.Edges.Parent.Name
 	}
 
 	return record

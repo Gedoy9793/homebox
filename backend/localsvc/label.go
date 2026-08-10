@@ -14,27 +14,37 @@ import (
 // service. It returns a PNG preview with the millimetre layout embedded, so the
 // same response serves the on-screen dialog and the Bluetooth printer.
 //
-// Only the content parameters are used. The Width/Height/Dpi parameters describe
-// a pixel canvas sized for a sheet printer and say nothing about the label stock
-// in a Bluetooth printer, so the physical size comes from the profile instead.
+// The label is built from the record the QR code points at, not from the text in
+// the request. That text is assembled for a sheet of paper — fields joined with
+// newlines, an English "Location: " in front of the parent — and none of it fits
+// a 25mm label. Reading the fields from the database instead means the label can
+// give each one its own line and spend no space on labelling them.
+//
+// The passed text is the fallback for when the record cannot be read: no database
+// bound, or a URL that does not point at one.
+//
+// The Width/Height/Dpi parameters are ignored either way. They describe a pixel
+// canvas sized for a sheet printer and say nothing about the label stock in a
+// Bluetooth printer, so the physical size comes from the profile.
 func handleLabel(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
+	labelURL := query.Get("URL")
 
-	description := query.Get("DescriptionText")
-	if additional := query.Get("AdditionalInformation"); additional != "" {
-		description = strings.TrimPrefix(description+"\n"+additional, "\n")
-	}
+	// One lookup: it supplies the content and decides the label stock.
+	record := lookupEntity(r.Context(), labelURL)
 
 	request := labelRequest{
-		title:       query.Get("TitleText"),
-		description: description,
-		url:         query.Get("URL"),
+		title:       firstNonEmptyString(record.name, query.Get("TitleText")),
+		description: firstNonEmptyString(record.location, query.Get("DescriptionText")),
+		assetID:     record.assetID.String(),
+		url:         labelURL,
 	}
 
-	// Homebox passes text, not identity, so the asset ID is read from the record
-	// the QR code points at — one lookup that also decides the label stock.
-	record := lookupEntity(r.Context(), request.url)
-	request.assetID = record.assetID.String()
+	// Operator-configured extra text is not part of any record, so it can only
+	// come from the request.
+	if additional := query.Get("AdditionalInformation"); additional != "" {
+		request.description = strings.TrimSpace(request.description + " " + additional)
+	}
 
 	// An explicit request wins; otherwise the entity's type decides, so a cable
 	// gets a flag label and everything else the default stock.

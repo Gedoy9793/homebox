@@ -17,9 +17,9 @@ func TestGenerateSampleLabels(t *testing.T) {
 		"standard": {
 			request: labelRequest{
 				title:       "Netgear GS308 switch",
-				description: "Location: Rack 3 / Shelf 2",
+				description: "Rack 3 / Shelf 2",
 				assetID:     testAssetID,
-				url:         "https://homebox.example.com/a/000-042",
+				url:         testAssetURL,
 			},
 			prof: profiles[profileStandard],
 		},
@@ -34,8 +34,9 @@ func TestGenerateSampleLabels(t *testing.T) {
 		},
 		"chinese": {
 			request: labelRequest{
-				title:       "000-108",
-				description: "三养辣鸡肉芝士味拌面（油炸方便面）\n位置：储物间 / 第二层",
+				title:       "三养辣鸡肉芝士味拌面（油炸方便面）",
+				description: "储物间 / 第二层",
+				assetID:     "000-108",
 				url:         "https://homebox.example.com/a/000-108",
 			},
 			prof: profiles[profileStandard],
