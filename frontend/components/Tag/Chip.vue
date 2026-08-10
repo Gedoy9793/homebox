@@ -42,7 +42,7 @@
     :style="
       tag.color
         ? { backgroundColor: tag.color, color: getContrastTextColor(tag.color) }
-        : { backgroundColor: 'hsl(var(--accent))' }
+        : { backgroundColor: 'hsl(var(--accent))', color: 'hsl(var(--accent-foreground))' }
     "
     :to="`/tag/${tag.id}`"
   >
