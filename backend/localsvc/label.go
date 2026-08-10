@@ -37,19 +37,20 @@ func handleLabel(w http.ResponseWriter, r *http.Request) {
 
 	if record.name != "" {
 		request.title = record.name
-		request.description = recordDescription(record)
 		request.assetID = record.assetID.String()
+		request.detail = record.description
+		request.footer = recordFooter(record)
 	} else {
 		// Fallback: the text labelmaker assembled. Its newlines are flattened
 		// because they join fields that a label reads better side by side.
 		request.title = query.Get("TitleText")
-		request.description = strings.ReplaceAll(query.Get("DescriptionText"), "\n", " ")
+		request.footer = strings.ReplaceAll(query.Get("DescriptionText"), "\n", " ")
 	}
 
 	// Operator-configured extra text is not part of any record, so it can only
 	// come from the request.
 	if additional := query.Get("AdditionalInformation"); additional != "" {
-		request.description = strings.TrimSpace(request.description + " " + additional)
+		request.detail = strings.TrimSpace(request.detail + " " + additional)
 	}
 
 	// An explicit request wins; otherwise the record decides, so a cable gets a
@@ -75,27 +76,17 @@ func handleLabel(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// recordDescription is what goes under the headline.
+// recordFooter is the strip across the bottom of the label.
 //
-// A location gets the path down to it and then its own description: on its own,
-// "Shelf 2" does not say which cupboard. Anything else gets the location it sits
-// in, which is the one thing you want a label to tell you when the thing is not
-// where you expected.
-func recordDescription(record entityRecord) string {
-	if !record.isLocation {
-		return record.location
+// For a location it is the whole path down to it: "Shelf 2" on its own does not
+// say which cupboard. For anything else it is the location it sits in, which is
+// what you want the label to tell you when the thing is not where you expected.
+func recordFooter(record entityRecord) string {
+	if record.isLocation {
+		return strings.Join(record.path, " / ")
 	}
 
-	var parts []string
-
-	if path := strings.Join(record.path, " / "); path != "" {
-		parts = append(parts, path)
-	}
-	if record.description != "" {
-		parts = append(parts, record.description)
-	}
-
-	return strings.Join(parts, "\n")
+	return record.location
 }
 
 // renderLabel produces the PNG together with its embedded layout.

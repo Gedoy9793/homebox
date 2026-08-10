@@ -89,9 +89,9 @@ func itemsOfType(spec labelSpec, kind string) []labelItem {
 
 func TestRenderLabelEmbedsLayout(t *testing.T) {
 	request := labelRequest{
-		title:       testAssetID,
-		description: "Network switch\nLocation: Rack",
-		url:         "https://homebox.example.com/item/abc",
+		title:  testAssetID,
+		footer: "Network switch",
+		url:    "https://homebox.example.com/item/abc",
 	}
 
 	raw, err := renderLabel(request, profiles[profileStandard])
@@ -205,10 +205,10 @@ func TestHeadlineLeadsWithTheAssetID(t *testing.T) {
 // it is printed on.
 func TestBothProfilesLeadWithTheAssetID(t *testing.T) {
 	request := labelRequest{
-		title:       testItemName,
-		description: testLocationName,
-		assetID:     testAssetID,
-		url:         "https://example.com/a/000-042",
+		title:   testItemName,
+		footer:  testLocationName,
+		assetID: testAssetID,
+		url:     "https://example.com/a/000-042",
 	}
 
 	for _, name := range []string{profileStandard, profileCable} {
@@ -238,16 +238,16 @@ func TestBothProfilesLeadWithTheAssetID(t *testing.T) {
 	}
 }
 
-// On the small stock the description runs under the QR code and the headline,
-// across the whole label: beside the QR code it would be a few characters wide.
-func TestStandardDescriptionRunsFullWidthUnderTheCode(t *testing.T) {
+// The footer runs under the QR code and the headline, across the whole label:
+// beside the QR code it would be a few characters wide.
+func TestFooterRunsFullWidthUnderTheCode(t *testing.T) {
 	standard := profiles[profileStandard]
 
 	spec, err := buildSpec(labelRequest{
-		title:       testItemName,
-		description: "Location: Rack 3",
-		assetID:     testAssetID,
-		url:         "https://example.com/a/000-042",
+		title:   testItemName,
+		footer:  testLocationName,
+		assetID: testAssetID,
+		url:     "https://example.com/a/000-042",
 	}, standard)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -259,26 +259,26 @@ func TestStandardDescriptionRunsFullWidthUnderTheCode(t *testing.T) {
 	}
 	codeBottom := codes[0].Y + codes[0].Height
 
-	description := 0
+	footer := 0
 	for _, item := range itemsOfType(spec, itemText) {
 		if item.Text == testAssetID || strings.HasPrefix(testItemName, item.Text) {
 			continue
 		}
 
-		description++
+		footer++
 		if item.Y+0.01 < codeBottom {
-			t.Errorf("expected the description below the QR code (y=%g, code ends at %g)", item.Y, codeBottom)
+			t.Errorf("expected the footer below the QR code (y=%g, code ends at %g)", item.Y, codeBottom)
 		}
 		if item.X > standard.paddingMM+0.01 {
-			t.Errorf("expected the description to start at the left margin, got x=%g", item.X)
+			t.Errorf("expected the footer to start at the left margin, got x=%g", item.X)
 		}
 		if item.Width < standard.widthMM-2*standard.paddingMM-0.01 {
-			t.Errorf("expected the description to span the label, got width=%g", item.Width)
+			t.Errorf("expected the footer to span the label, got width=%g", item.Width)
 		}
 	}
 
-	if description == 0 {
-		t.Fatal("expected the description to be laid out")
+	if footer == 0 {
+		t.Fatal("expected the footer to be laid out")
 	}
 }
 
@@ -308,10 +308,10 @@ func cableSpec(t *testing.T) labelSpec {
 	t.Helper()
 
 	spec, err := buildSpec(labelRequest{
-		title:       testCableID,
-		description: "Office AP uplink from the patch panel in rack 3",
-		assetID:     testAssetID,
-		url:         "https://example.com/item/x",
+		title:   testCableID,
+		detail:  "Office AP uplink from the patch panel in rack 3",
+		assetID: testAssetID,
+		url:     "https://example.com/item/x",
 	}, profiles[profileCable])
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -464,7 +464,7 @@ func TestCablePreviewIsTheLayoutCanvas(t *testing.T) {
 // layout must not, or the printer draws a line down the middle of the label.
 func TestCableLabelDoesNotEmbedTheFoldLine(t *testing.T) {
 	raw, err := renderLabel(
-		labelRequest{title: testCableID, description: "Office AP uplink", url: "https://example.com/item/x"},
+		labelRequest{title: testCableID, detail: "Office AP uplink", url: "https://example.com/item/x"},
 		profiles[profileCable],
 	)
 	if err != nil {
@@ -653,11 +653,9 @@ func TestLabelEndpointPrefersTheRecordOverTheRequestText(t *testing.T) {
 	}
 }
 
-// A location label shows the path down to it and its own description. Neither the
-// name of the parent on its own nor Homebox's "Homebox Location" placeholder tells
-// the reader anything.
-func TestLocationDescriptionIsThePathAndItsOwnText(t *testing.T) {
-	record := entityRecord{
+// The footer is the path for a location and the parent's name for anything else.
+func TestRecordFooter(t *testing.T) {
+	location := entityRecord{
 		name:        "Shelf 2",
 		description: "Spare parts",
 		location:    "Cupboard A",
@@ -665,33 +663,52 @@ func TestLocationDescriptionIsThePathAndItsOwnText(t *testing.T) {
 		isLocation:  true,
 	}
 
-	if got := recordDescription(record); got != "Garage / Cupboard A\nSpare parts" {
-		t.Fatalf("unexpected description %q", got)
-	}
-
-	// Without a description of its own, just the path.
-	record.description = ""
-	if got := recordDescription(record); got != "Garage / Cupboard A" {
-		t.Fatalf("unexpected description %q", got)
+	if got := recordFooter(location); got != "Garage / Cupboard A" {
+		t.Fatalf("unexpected footer %q", got)
 	}
 
 	// An item gets the location it sits in instead.
-	if got := recordDescription(entityRecord{location: testLocationName}); got != testLocationName {
-		t.Fatalf("unexpected description %q", got)
+	if got := recordFooter(entityRecord{location: testLocationName}); got != testLocationName {
+		t.Fatalf("unexpected footer %q", got)
 	}
 }
 
-// The placeholder Homebox puts in a location label's description must never reach
-// the label; the record supplies the text instead.
-func TestLocationLabelLeavesOutTheHomeboxPlaceholder(t *testing.T) {
+// On a location label the description sits under the name and the path runs along
+// the bottom. Homebox's "Homebox Location" placeholder never appears, because none
+// of this comes from the text it sends.
+func TestLocationLabelSeparatesDescriptionFromPath(t *testing.T) {
 	spec, err := buildSpec(labelRequest{
-		title:       "Shelf 2",
-		description: recordDescription(entityRecord{path: []string{"Garage"}, isLocation: true}),
-		assetID:     testAssetID,
-		url:         "https://homebox.example.com/location/abc",
+		title:   "Shelf 2",
+		detail:  "Spare parts",
+		footer:  "Garage / Cupboard A",
+		assetID: testAssetID,
+		url:     "https://homebox.example.com/location/abc",
 	}, profiles[profileLocation])
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	codes := itemsOfType(spec, itemQRCode)
+	if len(codes) != 1 {
+		t.Fatalf("expected one QR code, got %d", len(codes))
+	}
+
+	for _, item := range itemsOfType(spec, itemText) {
+		switch {
+		case item.Text == "Spare parts":
+			// Beside the QR code, in the column with the name.
+			if item.X <= codes[0].X+codes[0].Width {
+				t.Errorf("expected the description beside the QR code, got x=%g", item.X)
+			}
+		case strings.Contains(item.Text, "Garage"):
+			// Across the bottom, at the left margin.
+			if item.X > profiles[profileLocation].paddingMM+0.01 {
+				t.Errorf("expected the path at the left margin, got x=%g", item.X)
+			}
+			if item.Y+item.Height < spec.Height-profiles[profileLocation].paddingMM-0.01 {
+				t.Errorf("expected the path on the bottom edge, got y=%g", item.Y)
+			}
+		}
 	}
 
 	if spec.Width != 60 || spec.Height != 40 {

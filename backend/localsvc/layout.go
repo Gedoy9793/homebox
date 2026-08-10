@@ -29,6 +29,10 @@ const (
 	// better spent on the description.
 	maxSubtitleLines = 1
 
+	// maxFooterLines caps the strip across the bottom. It holds one value — a
+	// location path, or where an item lives — so two lines is generous.
+	maxFooterLines = 2
+
 	// qrWidthShare caps how much of the label width the QR code may take. Fitting
 	// it to the full height instead leaves the text a column too narrow to break
 	// sensibly, and wastes the space under the code.
@@ -54,14 +58,18 @@ func headline(req labelRequest) (primary string, secondary string) {
 	return req.title, ""
 }
 
-// labelRequest is the label content. The text comes from Homebox's labelmaker;
-// assetID is looked up from the record the URL points at, because labelmaker
-// does not pass it.
+// labelRequest is the label content, split by where it goes rather than by where
+// it came from.
+//
+// detail sits in the column beside the QR code, under the name. footer runs across
+// the bottom of the label, which is the only place wide enough for something that
+// reads as a sentence — a location path, or where an item lives.
 type labelRequest struct {
-	title       string
-	description string
-	assetID     string
-	url         string
+	title   string
+	assetID string
+	detail  string
+	footer  string
+	url     string
 }
 
 // buildSpec turns the request into a positioned layout for the given stock.
@@ -98,13 +106,12 @@ func buildSpec(req labelRequest, prof profile) (labelSpec, error) {
 	return spec, nil
 }
 
-// layoutStandard puts the QR code top left with the headline beside it, and runs
-// the description underneath both, across the whole label.
+// layoutStandard puts the QR code top left, the headline and detail in the column
+// beside it, and the footer across the bottom of the label.
 //
-// The description gets the full width because it is the part that reads as a
-// sentence: in the column beside the QR code it is barely five characters wide
-// and breaks into fragments. Whatever still does not fit is dropped — a label is
-// a summary.
+// The footer is placed first because it is anchored to the bottom edge; the column
+// then gets everything above it. Whatever does not fit is dropped — a label is a
+// summary.
 func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Face) []labelItem {
 	var items []labelItem
 
@@ -133,6 +140,13 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Fac
 	textWidth := prof.widthMM - textX - prof.paddingMM
 
 	bodyLineHeight := prof.bodyMM * lineSpacing
+	fullWidth := prof.widthMM - 2*prof.paddingMM
+
+	// The footer is measured up front: it sits on the bottom edge, and where its
+	// top lands decides how much height the column above has.
+	footerLines := wrapText(req.footer, bodyFace, fullWidth, maxFooterLines)
+	footerTop := prof.heightMM - prof.paddingMM - float64(len(footerLines))*bodyLineHeight
+
 	primary, secondary := headline(req)
 
 	cursor := appendLines(&items, wrapText(primary, titleFace, textWidth, maxTitleLines),
@@ -143,13 +157,12 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Fac
 			textX, cursor, textWidth, prof.bodyMM, false)
 	}
 
-	// Below both the QR code and the headline, so neither is overlapped.
-	descriptionTop := max(prof.paddingMM+qrSize, cursor)
-	fullWidth := prof.widthMM - 2*prof.paddingMM
-	remaining := prof.heightMM - prof.paddingMM - descriptionTop
+	// The column may run past the bottom of the QR code — it is to the right of it
+	// — but not into the footer.
+	appendLines(&items, wrapText(req.detail, bodyFace, textWidth, int((footerTop-cursor)/bodyLineHeight)),
+		textX, cursor, textWidth, prof.bodyMM, false)
 
-	appendLines(&items, wrapText(req.description, bodyFace, fullWidth, int(remaining/bodyLineHeight)),
-		prof.paddingMM, descriptionTop, fullWidth, prof.bodyMM, false)
+	appendLines(&items, footerLines, prof.paddingMM, footerTop, fullWidth, prof.bodyMM, false)
 
 	return items
 }
@@ -157,11 +170,11 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Fac
 // layoutFlag lays out a cable flag. The label is folded in half, so it has two
 // faces and one of them always points away from the reader.
 //
-// The first face identifies the thing: QR code, title and asset ID. The second
-// carries the description across the full width, where it has several times the
-// room of a column squeezed in beside the QR code — which is why the description
-// is not repeated on the first face. Whichever way round the flag ends up folded,
-// one useful side faces out.
+// The first face identifies the thing: QR code, asset ID and name. The second
+// carries what it is for across the full width, where it has several times the
+// room of a column squeezed in beside the QR code — its own description, or where
+// it lives when it has none. Whichever way round the flag ends up folded, one
+// useful side faces out.
 //
 // prof is the rotated canvas, so the fold that runs across the label's width is a
 // horizontal line here, splitting the canvas into two wide, short faces stacked
@@ -218,7 +231,8 @@ func layoutFlag(req labelRequest, prof profile, titleFace, bodyFace font.Face) [
 	// The second face: description only, across the full width.
 	fullWidth := prof.widthMM - 2*prof.paddingMM
 	appendLines(&items,
-		wrapText(req.description, bodyFace, fullWidth, int((faceHeight-2*prof.paddingMM)/bodyLineHeight)),
+		wrapText(firstNonEmptyString(req.detail, req.footer), bodyFace, fullWidth,
+			int((faceHeight-2*prof.paddingMM)/bodyLineHeight)),
 		prof.paddingMM, faceHeight+prof.paddingMM, fullWidth, prof.bodyMM, false)
 
 	return items
