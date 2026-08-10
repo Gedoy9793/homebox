@@ -181,13 +181,17 @@ func TestLayoutOmitsQRCodeWithoutURL(t *testing.T) {
 	}
 }
 
-// A cable flag is folded in half, so the same content has to be printed twice.
-// It also prints rotated, so the layout is built on a canvas with the label's
-// sides swapped.
-func TestCableProfileRepeatsContentAndMarksTheFold(t *testing.T) {
+// A cable flag is folded in half: the first face identifies the thing, the second
+// carries the description across the full width. It also prints rotated, so the
+// layout is built on a canvas with the label's sides swapped.
+func TestCableProfileGivesEachFaceItsOwnContent(t *testing.T) {
 	cable := profiles[profileCable]
 
-	spec, err := buildSpec(labelRequest{title: testCableID, url: "https://example.com/item/x"}, cable)
+	spec, err := buildSpec(labelRequest{
+		title:       testCableID,
+		description: "Office AP uplink from the patch panel in rack 3",
+		url:         "https://example.com/item/x",
+	}, cable)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -199,18 +203,49 @@ func TestCableProfileRepeatsContentAndMarksTheFold(t *testing.T) {
 		t.Fatalf("expected a %gx%gmm canvas, got %gx%g", cable.heightMM, cable.widthMM, spec.Width, spec.Height)
 	}
 
+	foldY := spec.Height / 2
+
+	// The identity goes on the first face only; the second is for the description.
 	titles := 0
 	for _, item := range itemsOfType(spec, itemText) {
-		if item.Text == testCableID {
-			titles++
+		if item.Text != testCableID {
+			continue
+		}
+		titles++
+		if item.Y >= foldY {
+			t.Fatalf("expected the title on the first face, got y=%g", item.Y)
 		}
 	}
-	if titles != 2 {
-		t.Fatalf("expected the title on both halves, got %d copies", titles)
+	if titles != 1 {
+		t.Fatalf("expected exactly one title, got %d", titles)
 	}
 
-	if codes := itemsOfType(spec, itemQRCode); len(codes) != 2 {
-		t.Fatalf("expected a QR code on both halves, got %d", len(codes))
+	codes := itemsOfType(spec, itemQRCode)
+	if len(codes) != 1 {
+		t.Fatalf("expected exactly one QR code, got %d", len(codes))
+	}
+	if codes[0].Y >= foldY {
+		t.Fatalf("expected the QR code on the first face, got y=%g", codes[0].Y)
+	}
+
+	// The second face gets the full width, so it holds more of the description
+	// than the column beside the QR code does.
+	var narrow, wide int
+	for _, item := range itemsOfType(spec, itemText) {
+		if item.Y >= foldY {
+			wide++
+			if item.Width <= spec.Width/2 {
+				t.Fatalf("expected the second face to use the full width, got %g", item.Width)
+			}
+		} else if item.Text != testCableID {
+			narrow++
+		}
+	}
+	if wide == 0 {
+		t.Fatal("expected the description on the second face")
+	}
+	if narrow == 0 {
+		t.Fatal("expected the description to start on the first face too")
 	}
 
 	// The fold runs across the label's width, which on the rotated canvas is a
@@ -299,9 +334,9 @@ func TestCableLabelDoesNotEmbedTheFoldLine(t *testing.T) {
 	if spec.Rotation != 90 {
 		t.Fatalf("expected the rotation to survive, got %d", spec.Rotation)
 	}
-	// The content itself still has to be there, twice.
-	if codes := itemsOfType(spec, itemQRCode); len(codes) != 2 {
-		t.Fatalf("expected a QR code on both faces, got %d", len(codes))
+	// The content itself still has to be there.
+	if codes := itemsOfType(spec, itemQRCode); len(codes) != 1 {
+		t.Fatalf("expected one QR code, got %d", len(codes))
 	}
 }
 

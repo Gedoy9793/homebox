@@ -117,14 +117,20 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Fac
 	return items
 }
 
-// layoutFlag lays out a cable flag. The label is folded in half so that each face
-// carries the same content and stays readable whichever side ends up outwards.
+// layoutFlag lays out a cable flag. The label is folded in half, so it has two
+// faces and one of them always points away from the reader.
+//
+// The first face identifies the thing — QR code, title, and as much of the
+// description as fits beside the code. The second gives the description the whole
+// width instead, which fits several times more of it than the narrow column on
+// the first face. Whichever way round the flag ends up, one useful side is out.
 //
 // prof is the rotated canvas, so the fold that runs across the label's width is a
 // horizontal line here, splitting the canvas into two wide, short faces stacked
 // on top of each other.
 func layoutFlag(req labelRequest, prof profile, titleFace, bodyFace font.Face) []labelItem {
 	faceHeight := prof.heightMM / 2
+	bodyLineHeight := prof.bodyMM * lineSpacing
 
 	items := []labelItem{{
 		Type:        itemLine,
@@ -143,6 +149,15 @@ func layoutFlag(req labelRequest, prof profile, titleFace, bodyFace font.Face) [
 			qrSize = faceHeight - 2*prof.paddingMM
 		}
 		qrSize = min(qrSize, faceHeight-2*prof.paddingMM, prof.widthMM*qrWidthShare)
+
+		items = append(items, labelItem{
+			Type:   itemQRCode,
+			X:      prof.paddingMM,
+			Y:      prof.paddingMM,
+			Width:  qrSize,
+			Height: qrSize,
+			Text:   req.url,
+		})
 	}
 
 	textX := prof.paddingMM
@@ -154,25 +169,17 @@ func layoutFlag(req labelRequest, prof profile, titleFace, bodyFace font.Face) [
 	titleLines := wrapText(req.title, titleFace, textWidth, maxTitleLines)
 	titleHeight := float64(len(titleLines)) * prof.titleMM * lineSpacing
 
-	bodyLineHeight := prof.bodyMM * lineSpacing
+	cursor := appendLines(&items, titleLines, textX, prof.paddingMM, textWidth, prof.titleMM, true)
+
 	remaining := faceHeight - 2*prof.paddingMM - titleHeight
-	bodyLines := wrapText(req.description, bodyFace, textWidth, int(remaining/bodyLineHeight))
+	appendLines(&items, wrapText(req.description, bodyFace, textWidth, int(remaining/bodyLineHeight)),
+		textX, cursor, textWidth, prof.bodyMM, false)
 
-	for _, top := range []float64{0, faceHeight} {
-		if qrSize > 0 {
-			items = append(items, labelItem{
-				Type:   itemQRCode,
-				X:      prof.paddingMM,
-				Y:      top + prof.paddingMM,
-				Width:  qrSize,
-				Height: qrSize,
-				Text:   req.url,
-			})
-		}
-
-		cursor := appendLines(&items, titleLines, textX, top+prof.paddingMM, textWidth, prof.titleMM, true)
-		appendLines(&items, bodyLines, textX, cursor, textWidth, prof.bodyMM, false)
-	}
+	// The second face: description only, across the full width.
+	fullWidth := prof.widthMM - 2*prof.paddingMM
+	appendLines(&items,
+		wrapText(req.description, bodyFace, fullWidth, int((faceHeight-2*prof.paddingMM)/bodyLineHeight)),
+		prof.paddingMM, faceHeight+prof.paddingMM, fullWidth, prof.bodyMM, false)
 
 	return items
 }
