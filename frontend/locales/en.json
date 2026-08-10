@@ -313,6 +313,10 @@
                 "clear": "Clear Location Selection",
                 "no_location_found": "No location found",
                 "parent_location": "Parent Location",
+                "scan": "Scan a location label",
+                "scan_hint": "Point the camera at a location label to select it",
+                "scan_not_a_location": "That is not a location label",
+                "scan_unavailable": "That location can't be selected here",
                 "search_location": "Search Locations",
                 "select_location": "Select a Location"
             },

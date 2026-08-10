@@ -317,6 +317,10 @@
                 "clear": "清除位置选择",
                 "no_location_found": "未找到位置",
                 "parent_location": "父位置",
+                "scan": "扫描位置标签",
+                "scan_hint": "把摄像头对准位置标签即可选中",
+                "scan_not_a_location": "这不是位置标签",
+                "scan_unavailable": "这个位置不能在此处选择",
                 "search_location": "搜索位置",
                 "select_location": "选择一个位置"
             },

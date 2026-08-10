@@ -16,6 +16,19 @@ const PATHS: Record<LabelKind, string> = {
   asset: "asset",
 };
 
+/**
+ * The location id encoded in a scanned label, i.e. the `<uuid>` of a
+ * `/location/<uuid>` URL. Returns undefined for anything else — an item label, an
+ * asset label, or a barcode that is not a URL at all.
+ */
+export function locationIdFromUrl(text: string): string | undefined {
+  try {
+    return /^\/location\/([0-9a-f-]{36})\/?$/i.exec(new URL(text).pathname)?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
 export function labelUrl(kind: LabelKind, id: string, options: { print?: boolean; tenant?: string } = {}): string {
   const params: Record<string, QueryValue> = { print: options.print ?? false };
 

@@ -4,69 +4,76 @@
       {{ $t("components.location.selector.parent_location") }}
     </Label>
 
-    <Popover v-model:open="open">
-      <PopoverTrigger as-child>
-        <Button :id="id" variant="outline" role="combobox" :aria-expanded="open" class="w-full justify-between">
-          <span class="min-w-0 flex-auto truncate text-left">
-            {{ value && value.name ? value.name : $t("components.location.selector.select_location") }}
-          </span>
+    <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-1">
+      <Popover v-model:open="open">
+        <PopoverTrigger as-child>
+          <Button :id="id" variant="outline" role="combobox" :aria-expanded="open" class="w-full justify-between">
+            <span class="min-w-0 flex-auto truncate text-left">
+              {{ value && value.name ? value.name : $t("components.location.selector.select_location") }}
+            </span>
 
-          <span class="ml-2 flex items-center">
-            <button
-              v-if="value"
-              type="button"
-              class="shrink-0 rounded p-1 hover:bg-primary/20"
-              :aria-label="$t('components.location.selector.clear')"
-              @click.stop.prevent="clearSelection"
-            >
-              <X class="size-4" />
-            </button>
-
-            <ChevronsUpDown class="ml-2 size-4 shrink-0 opacity-50" />
-          </span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent class="w-[--reka-popper-anchor-width] p-0">
-        <Command :ignore-filter="true">
-          <CommandInput
-            v-model="search"
-            :placeholder="$t('components.location.selector.search_location')"
-            :display-value="_ => ''"
-          />
-          <CommandEmpty>{{ $t("components.location.selector.no_location_found") }}</CommandEmpty>
-          <CommandList>
-            <CommandGroup>
-              <CommandItem
-                v-for="location in filteredLocations"
-                :key="location.id"
-                :value="location.id"
-                @select="selectLocation(location as unknown as EntitySummary)"
+            <span class="ml-2 flex items-center">
+              <button
+                v-if="value"
+                type="button"
+                class="shrink-0 rounded p-1 hover:bg-primary/20"
+                :aria-label="$t('components.location.selector.clear')"
+                @click.stop.prevent="clearSelection"
               >
-                <Check :class="cn('mr-2 h-4 w-4', value?.id === location.id ? 'opacity-100' : 'opacity-0')" />
-                <div>
-                  <div class="flex w-full">
-                    {{ location.name }}
+                <X class="size-4" />
+              </button>
+
+              <ChevronsUpDown class="ml-2 size-4 shrink-0 opacity-50" />
+            </span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent class="w-[--reka-popper-anchor-width] p-0">
+          <Command :ignore-filter="true">
+            <CommandInput
+              v-model="search"
+              :placeholder="$t('components.location.selector.search_location')"
+              :display-value="_ => ''"
+            />
+            <CommandEmpty>{{ $t("components.location.selector.no_location_found") }}</CommandEmpty>
+            <CommandList>
+              <CommandGroup>
+                <CommandItem
+                  v-for="location in filteredLocations"
+                  :key="location.id"
+                  :value="location.id"
+                  @select="selectLocation(location as unknown as EntitySummary)"
+                >
+                  <Check :class="cn('mr-2 h-4 w-4', value?.id === location.id ? 'opacity-100' : 'opacity-0')" />
+                  <div>
+                    <div class="flex w-full">
+                      {{ location.name }}
+                    </div>
+                    <div v-if="location.name !== location.treeString" class="mt-1 text-xs text-muted-foreground">
+                      {{ location.treeString }}
+                    </div>
                   </div>
-                  <div v-if="location.name !== location.treeString" class="mt-1 text-xs text-muted-foreground">
-                    {{ location.treeString }}
-                  </div>
-                </div>
-              </CommandItem>
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+                </CommandItem>
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+
+      <LocationScanSelect @scanned="selectScanned" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
   import { Check, ChevronsUpDown, X } from "lucide-vue-next";
   import fuzzysort from "fuzzysort";
+  import { useI18n } from "vue-i18n";
   import { Button } from "~/components/ui/button";
   import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "~/components/ui/command";
   import { Label } from "~/components/ui/label";
   import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
+  import LocationScanSelect from "~/components/Location/ScanSelect.vue";
+  import { toast } from "~/components/ui/sonner";
   import { cn } from "~/lib/utils";
   import type { EntitySummary } from "~~/lib/api/types/data-contracts";
   import { useFlatLocations } from "~~/composables/use-location-helpers";
@@ -79,6 +86,7 @@
   const props = defineProps<Props>();
   const emit = defineEmits(["update:modelValue"]);
 
+  const { t } = useI18n();
   const open = ref(false);
   const search = ref("");
   const id = useId();
@@ -91,6 +99,23 @@
     } else {
       value.value = null;
     }
+    open.value = false;
+  }
+
+  /**
+   * Selects the location whose label was scanned. It can be missing from the list
+   * when it is the one being edited, or one of its own descendants — moving a
+   * location into itself is what useFlatLocations excludes.
+   */
+  function selectScanned(scannedId: string) {
+    const found = locations.value.find(location => location.id === scannedId);
+
+    if (!found) {
+      toast.error(t("components.location.selector.scan_unavailable"));
+      return;
+    }
+
+    selectLocation(found as unknown as EntitySummary);
     open.value = false;
   }
 
