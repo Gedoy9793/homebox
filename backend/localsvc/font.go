@@ -1,8 +1,10 @@
 package localsvc
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/rs/zerolog/log"
@@ -22,36 +24,38 @@ const (
 	EnvFontBoldPath = "HBOX_LOCAL_SVC_FONT_BOLD"
 )
 
-// cjkFontCandidates are the usual install locations of a CJK-capable sans font.
-// The Go fonts that ship with the binary cover Latin only, so without one of
-// these a Chinese item name renders as a row of empty boxes. Globs are matched
-// in order and the first hit wins, so more complete fonts come first.
-var cjkFontCandidates = []struct {
-	regular string
-	bold    string
-}{
-	// Alpine: font-noto-cjk / font-wqy-zenhei. The Docker image installs the
-	// latter, but which subdirectory it lands in has moved between releases, so
-	// the plain paths are backed up by globs below.
-	{regular: "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc", bold: "/usr/share/fonts/noto/NotoSansCJK-Bold.ttc"},
-	{regular: "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", bold: "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc"},
-	{regular: "/usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc"},
-	{regular: "/usr/share/fonts/*/wqy*.tt[cf]"},
-	{regular: "/usr/share/fonts/*/*zenhei*.tt[cf]"},
-	// Debian/Ubuntu.
-	{regular: "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", bold: "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"},
-	{regular: "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", bold: "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc"},
-	{regular: "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"},
-	{regular: "/usr/share/fonts/truetype/arphic/uming.ttc"},
-	// Anything else that looks like a CJK font. filepath.Glob has no "**", so the
-	// nesting levels are spelled out.
-	{regular: "/usr/share/fonts/*CJK*.tt[cf]"},
-	{regular: "/usr/share/fonts/*/*CJK*.tt[cf]"},
-	{regular: "/usr/share/fonts/*/*/*CJK*.tt[cf]"},
+// fontDirs are searched, recursively, for a font that can draw Chinese. The Go
+// fonts compiled into the binary cover Latin only, so without one of these a
+// Chinese item name comes out as a row of empty boxes.
+//
+// Which package puts which font where has moved between distro releases, so
+// nothing here assumes a file name: every candidate is opened and asked whether
+// it actually has the glyphs. That is the only check that cannot go stale.
+var fontDirs = []string{
+	"/usr/share/fonts",
+	"/usr/local/share/fonts",
+	"/usr/share/fonts/truetype",
+	"/opt/fonts",
 	// macOS, for development.
-	{regular: "/System/Library/Fonts/PingFang.ttc"},
-	{regular: "/System/Library/Fonts/Hiragino Sans GB.ttc"},
+	"/System/Library/Fonts",
+	"/Library/Fonts",
 }
+
+// fontExtensions are the formats x/image/font/sfnt can parse.
+var fontExtensions = map[string]bool{".ttf": true, ".ttc": true, ".otf": true, ".otc": true}
+
+// cjkFontHints order the search. A directory can hold hundreds of fonts and each
+// one costs a parse, so files whose names suggest CJK coverage are tried first.
+// This only affects the order — a font is still chosen on its glyphs.
+var cjkFontHints = []string{"cjk", "noto", "wqy", "zenhei", "microhei", "hei", "song", "ming", "kai", "pingfang", "han"}
+
+// cjkProbe is the character a font has to be able to draw to be considered. It is
+// a common Han character, so any font with real CJK coverage has it.
+const cjkProbe = '中'
+
+// maxFontFiles bounds the scan, so a machine with a huge font collection cannot
+// turn the first label render into a long wait.
+const maxFontFiles = 400
 
 type fontSet struct {
 	regular *sfnt.Font
@@ -107,57 +111,65 @@ func discoverFonts() fontSet {
 	return set
 }
 
+// discoverCJKFont finds an installed font that can draw Chinese, along with its
+// bold companion if the same directory has one.
 func discoverCJKFont() (regular *sfnt.Font, bold *sfnt.Font) {
-	for _, candidate := range cjkFontCandidates {
-		path := firstExistingPath(candidate.regular)
-		if path == "" {
-			continue
-		}
+	files := collectFontFiles()
 
+	for _, path := range files {
 		parsed := parseFontFile(path)
-		if parsed == nil {
+		if parsed == nil || !drawsCJK(parsed) {
 			continue
 		}
 
-		log.Debug().Str("font", path).Msg("Using font for label previews")
+		log.Info().Str("font", path).Int("scanned", len(files)).
+			Msg("Using font for label previews")
 
-		return parsed, parseFontFile(firstExistingPath(candidate.bold))
+		return parsed, boldCompanion(path)
 	}
+
+	log.Debug().Int("scanned", len(files)).Strs("directories", fontDirs).
+		Msg("No installed font draws Chinese")
 
 	return nil, nil
 }
 
-// firstExistingPath resolves a candidate that may be a plain path or a glob.
-func firstExistingPath(pattern string) string {
-	if pattern == "" {
-		return ""
+// collectFontFiles lists installed font files, most likely to cover CJK first.
+func collectFontFiles() []string {
+	var hinted, others []string
+
+	for _, dir := range fontDirs {
+		_ = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				// Unreadable or absent directory: nothing to do about it here.
+				return nil //nolint:nilerr // skip, do not abort the whole walk
+			}
+			if entry.IsDir() || !fontExtensions[strings.ToLower(filepath.Ext(path))] {
+				return nil
+			}
+
+			if len(hinted)+len(others) >= maxFontFiles {
+				return fs.SkipAll
+			}
+
+			if looksLikeCJK(path) {
+				hinted = append(hinted, path)
+			} else {
+				others = append(others, path)
+			}
+
+			return nil
+		})
 	}
 
-	if !hasGlobMeta(pattern) {
-		if info, err := os.Stat(pattern); err == nil && !info.IsDir() {
-			return pattern
-		}
-		return ""
-	}
-
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return ""
-	}
-
-	for _, match := range matches {
-		if info, err := os.Stat(match); err == nil && !info.IsDir() {
-			return match
-		}
-	}
-
-	return ""
+	return append(hinted, others...)
 }
 
-func hasGlobMeta(pattern string) bool {
-	for _, r := range pattern {
-		switch r {
-		case '*', '?', '[':
+func looksLikeCJK(path string) bool {
+	name := strings.ToLower(filepath.Base(path))
+
+	for _, hint := range cjkFontHints {
+		if strings.Contains(name, hint) {
 			return true
 		}
 	}
@@ -165,32 +177,95 @@ func hasGlobMeta(pattern string) bool {
 	return false
 }
 
-// parseFontFile reads a .ttf/.otf/.ttc. Collections hold several faces; the
-// first one is the upright regular in every CJK collection worth using.
+// drawsCJK reports whether a font has a glyph for the probe character. Asking the
+// font beats guessing from its file name, which is what kept going wrong.
+func drawsCJK(parsed *sfnt.Font) bool {
+	var buffer sfnt.Buffer
+
+	index, err := parsed.GlyphIndex(&buffer, cjkProbe)
+
+	return err == nil && index != 0
+}
+
+// boldCompanion looks for a bold cut of the font next to it, e.g. the
+// NotoSansCJK-Bold.ttc beside NotoSansCJK-Regular.ttc. Returns nil when there is
+// none, in which case the renderer fakes the weight.
+func boldCompanion(regularPath string) *sfnt.Font {
+	name := filepath.Base(regularPath)
+
+	for _, replacement := range [][2]string{
+		{"-Regular", "-Bold"},
+		{"regular", "bold"},
+		{"Regular", "Bold"},
+	} {
+		if !strings.Contains(name, replacement[0]) {
+			continue
+		}
+
+		candidate := filepath.Join(filepath.Dir(regularPath), strings.Replace(name, replacement[0], replacement[1], 1))
+		if info, err := os.Stat(candidate); err != nil || info.IsDir() {
+			continue
+		}
+
+		if parsed := parseFontFile(candidate); parsed != nil && drawsCJK(parsed) {
+			return parsed
+		}
+	}
+
+	return nil
+}
+
+// parseFontFile reads a .ttf/.otf/.ttc, returning nil for anything this renderer
+// cannot use. Some installed fonts are not parseable by x/image/font/sfnt at all
+// — wqy-zenhei.ttc is one — hence the caller trying the next candidate.
 func parseFontFile(path string) *sfnt.Font {
 	if path == "" {
 		return nil
 	}
 
-	raw, err := os.ReadFile(path) //nolint:gosec // operator-supplied or well-known font path
+	raw, err := os.ReadFile(path) //nolint:gosec // operator-supplied or discovered font path
 	if err != nil {
-		log.Warn().Err(err).Str("font", path).Msg("Can not read font")
+		log.Debug().Err(err).Str("font", path).Msg("Can not read font")
 		return nil
 	}
 
 	collection, err := sfnt.ParseCollection(raw)
 	if err != nil {
-		log.Warn().Err(err).Str("font", path).Msg("Can not parse font")
+		log.Debug().Err(err).Str("font", path).Msg("Can not parse font")
 		return nil
 	}
 
-	parsed, err := collection.Font(0)
-	if err != nil {
-		log.Warn().Err(err).Str("font", path).Msg("Can not read first face of font")
-		return nil
+	return pickFace(collection, path)
+}
+
+// pickFace chooses a face out of a collection. Noto Sans CJK ships JP, KR, SC, TC
+// and HK cuts plus a monospace version of each; the same code point is drawn
+// differently per region, so the simplified Chinese proportional face is taken
+// where there is one.
+func pickFace(collection *sfnt.Collection, path string) *sfnt.Font {
+	var fallback *sfnt.Font
+
+	for i := range collection.NumFonts() {
+		parsed, err := collection.Font(i)
+		if err != nil {
+			log.Debug().Err(err).Str("font", path).Int("face", i).Msg("Skipping unreadable face")
+			continue
+		}
+
+		if family, err := parsed.Name(nil, sfnt.NameIDFamily); err == nil && simplifiedChineseFace(family) {
+			return parsed
+		}
+
+		if fallback == nil {
+			fallback = parsed
+		}
 	}
 
-	return parsed
+	return fallback
+}
+
+func simplifiedChineseFace(family string) bool {
+	return strings.HasSuffix(family, " SC") && !strings.Contains(strings.ToLower(family), "mono")
 }
 
 func mustParseFont(raw []byte) *sfnt.Font {
