@@ -84,8 +84,8 @@ func TestProfileMapIgnoresMalformedEntries(t *testing.T) {
 func TestEntityTypeNameWithoutDatabase(t *testing.T) {
 	database.Store(nil)
 
-	if got := entityTypeName(context.Background(), "https://homebox.example.com/a/000-042"); got != "" {
-		t.Fatalf("expected no type without a database, got %q", got)
+	if got := lookupEntity(context.Background(), "https://homebox.example.com/a/000-042"); got != (entityRecord{}) {
+		t.Fatalf("expected nothing without a database, got %+v", got)
 	}
 }
 
@@ -129,25 +129,30 @@ func TestEntityTypeNameResolvesFromDatabase(t *testing.T) {
 
 	Bind(client)
 
-	// Both URL forms Homebox puts in a QR code have to resolve.
+	// Both URL forms Homebox puts in a QR code have to resolve, and both have to
+	// yield the asset ID, which is the other thing the label needs.
 	for _, labelURL := range []string{
 		"https://homebox.example.com/item/" + record.ID.String(),
 		"https://homebox.example.com/a/000-042",
 	} {
-		if got := entityTypeName(ctx, labelURL); got != "线缆" {
-			t.Errorf("expected %q to resolve to 线缆, got %q", labelURL, got)
+		got := lookupEntity(ctx, labelURL)
+		if got.typeName != "线缆" {
+			t.Errorf("expected %q to resolve to 线缆, got %q", labelURL, got.typeName)
+		}
+		if got.assetID.String() != "000-042" {
+			t.Errorf("expected %q to yield asset ID 000-042, got %q", labelURL, got.assetID.String())
 		}
 	}
 
 	// A record that does not exist must not fail the label.
 	unknown := "https://homebox.example.com/a/999-999"
-	if got := entityTypeName(ctx, unknown); got != "" {
-		t.Errorf("expected no type for %q, got %q", unknown, got)
+	if got := lookupEntity(ctx, unknown); got != (entityRecord{}) {
+		t.Errorf("expected nothing for %q, got %+v", unknown, got)
 	}
 
 	// And the whole point: this picks the label stock.
 	t.Setenv(EnvProfileMap, "")
-	if got := profileForLabelURL(ctx, "https://homebox.example.com/a/000-042"); got != profileCable {
+	if got := profileForTypeName(lookupEntity(ctx, "https://homebox.example.com/a/000-042").typeName); got != profileCable {
 		t.Errorf("expected a cable flag, got %q", got)
 	}
 }

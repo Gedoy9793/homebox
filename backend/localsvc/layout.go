@@ -34,10 +34,13 @@ const (
 	foldLineWidthMM = 0.2
 )
 
-// labelRequest is the label content, as handed over by Homebox's labelmaker.
+// labelRequest is the label content. The text comes from Homebox's labelmaker;
+// assetID is looked up from the record the URL points at, because labelmaker
+// does not pass it.
 type labelRequest struct {
 	title       string
 	description string
+	assetID     string
 	url         string
 }
 
@@ -120,10 +123,11 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Fac
 // layoutFlag lays out a cable flag. The label is folded in half, so it has two
 // faces and one of them always points away from the reader.
 //
-// The first face identifies the thing — QR code, title, and as much of the
-// description as fits beside the code. The second gives the description the whole
-// width instead, which fits several times more of it than the narrow column on
-// the first face. Whichever way round the flag ends up, one useful side is out.
+// The first face identifies the thing: QR code, title and asset ID. The second
+// carries the description across the full width, where it has several times the
+// room of a column squeezed in beside the QR code — which is why the description
+// is not repeated on the first face. Whichever way round the flag ends up folded,
+// one useful side faces out.
 //
 // prof is the rotated canvas, so the fold that runs across the label's width is a
 // horizontal line here, splitting the canvas into two wide, short faces stacked
@@ -171,9 +175,14 @@ func layoutFlag(req labelRequest, prof profile, titleFace, bodyFace font.Face) [
 
 	cursor := appendLines(&items, titleLines, textX, prof.paddingMM, textWidth, prof.titleMM, true)
 
-	remaining := faceHeight - 2*prof.paddingMM - titleHeight
-	appendLines(&items, wrapText(req.description, bodyFace, textWidth, int(remaining/bodyLineHeight)),
-		textX, cursor, textWidth, prof.bodyMM, false)
+	// The asset ID is the number written on the shelf list, so it belongs next to
+	// the name. Skipped when the title already is the asset ID, which is what an
+	// asset label's title holds.
+	if req.assetID != "" && req.assetID != req.title {
+		remaining := faceHeight - 2*prof.paddingMM - titleHeight
+		appendLines(&items, wrapText(req.assetID, bodyFace, textWidth, int(remaining/bodyLineHeight)),
+			textX, cursor, textWidth, prof.bodyMM, false)
+	}
 
 	// The second face: description only, across the full width.
 	fullWidth := prof.widthMM - 2*prof.paddingMM

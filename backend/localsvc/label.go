@@ -31,11 +31,16 @@ func handleLabel(w http.ResponseWriter, r *http.Request) {
 		url:         query.Get("URL"),
 	}
 
+	// Homebox passes text, not identity, so the asset ID is read from the record
+	// the QR code points at — one lookup that also decides the label stock.
+	record := lookupEntity(r.Context(), request.url)
+	request.assetID = record.assetID.String()
+
 	// An explicit request wins; otherwise the entity's type decides, so a cable
 	// gets a flag label and everything else the default stock.
 	requested := query.Get("LabelProfile")
 	if requested == "" {
-		requested = profileForLabelURL(r.Context(), request.url)
+		requested = profileForTypeName(record.typeName)
 	}
 
 	image, err := renderLabel(request, resolveProfile(requested, query.Get("LabelSize")))

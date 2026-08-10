@@ -12,6 +12,7 @@ import (
 	"github.com/sysadminsmedia/homebox/backend/internal/data/ent"
 	"github.com/sysadminsmedia/homebox/backend/internal/data/ent/entity"
 	"github.com/sysadminsmedia/homebox/backend/internal/data/ent/predicate"
+	"github.com/sysadminsmedia/homebox/backend/internal/data/repo"
 )
 
 // Picking the label stock per kind of thing needs to know what kind of thing the
@@ -49,12 +50,6 @@ func Bind(client *ent.Client) {
 	log.Debug().Msg("Bundled label service can now pick label stock per entity type")
 }
 
-// profileForLabelURL works out which label profile suits the record a label is
-// being printed for. An empty result leaves the choice to the configuration.
-func profileForLabelURL(ctx context.Context, labelURL string) string {
-	return profileForTypeName(entityTypeName(ctx, labelURL))
-}
-
 func profileForTypeName(typeName string) string {
 	if typeName == "" {
 		return ""
@@ -74,35 +69,44 @@ func profileForTypeName(typeName string) string {
 	return ""
 }
 
-// entityTypeName resolves the entity type behind a label URL such as
-// https://homebox.example.com/item/<uuid> or /a/<asset-id>.
-func entityTypeName(ctx context.Context, labelURL string) string {
+// entityRecord is what a label needs to know about the thing it identifies,
+// beyond the text Homebox already passes in.
+type entityRecord struct {
+	typeName string
+	assetID  repo.AssetID
+}
+
+// lookupEntity resolves the record behind a label URL such as
+// https://homebox.example.com/item/<uuid> or /a/<asset-id>. A zero value means
+// nothing could be resolved, which leaves the label to the text it was given.
+func lookupEntity(ctx context.Context, labelURL string) entityRecord {
 	client := database.Load()
 	if client == nil {
-		return ""
+		return entityRecord{}
 	}
 
 	match, ok := entityPredicate(labelURL)
 	if !ok {
-		return ""
+		return entityRecord{}
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, typeLookupTimeout)
 	defer cancel()
 
-	record, err := client.Entity.Query().Where(match).WithEntityType().Only(ctx)
+	found, err := client.Entity.Query().Where(match).WithEntityType().Only(ctx)
 	if err != nil {
 		// A label for a record that cannot be read is not worth failing over; the
 		// default label stock is used instead.
-		log.Debug().Err(err).Msg("Can not resolve the entity type for a label")
-		return ""
+		log.Debug().Err(err).Msg("Can not resolve the record behind a label")
+		return entityRecord{}
 	}
 
-	if record.Edges.EntityType == nil {
-		return ""
+	record := entityRecord{assetID: repo.AssetID(found.AssetID)}
+	if found.Edges.EntityType != nil {
+		record.typeName = found.Edges.EntityType.Name
 	}
 
-	return record.Edges.EntityType.Name
+	return record
 }
 
 // entityPredicate turns the tail of a Homebox record URL into a query.

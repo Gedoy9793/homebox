@@ -25,7 +25,8 @@ func TestGenerateSampleLabels(t *testing.T) {
 		"cable": {
 			request: labelRequest{
 				title:       testCableID,
-				description: "Office AP uplink",
+				description: "Office AP uplink from the patch panel in rack 3",
+				assetID:     "000-042",
 				url:         "https://homebox.example.com/item/abc",
 			},
 			prof: profiles[profileCable],

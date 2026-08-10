@@ -181,20 +181,29 @@ func TestLayoutOmitsQRCodeWithoutURL(t *testing.T) {
 	}
 }
 
-// A cable flag is folded in half: the first face identifies the thing, the second
-// carries the description across the full width. It also prints rotated, so the
-// layout is built on a canvas with the label's sides swapped.
-func TestCableProfileGivesEachFaceItsOwnContent(t *testing.T) {
-	cable := profiles[profileCable]
+// cableSpec builds a cable flag with all the content a label can carry, so the
+// tests below can each check one aspect of how the two faces divide it up.
+func cableSpec(t *testing.T) labelSpec {
+	t.Helper()
 
 	spec, err := buildSpec(labelRequest{
 		title:       testCableID,
 		description: "Office AP uplink from the patch panel in rack 3",
+		assetID:     testAssetID,
 		url:         "https://example.com/item/x",
-	}, cable)
+	}, profiles[profileCable])
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
+	return spec
+}
+
+// A cable flag prints rotated, so the layout is built on a canvas with the
+// label's sides swapped.
+func TestCableProfileIsARotatedCanvas(t *testing.T) {
+	cable := profiles[profileCable]
+	spec := cableSpec(t)
 
 	if spec.Rotation != 90 {
 		t.Fatalf("expected the layout to be printed rotated, got %d", spec.Rotation)
@@ -202,22 +211,27 @@ func TestCableProfileGivesEachFaceItsOwnContent(t *testing.T) {
 	if spec.Width != cable.heightMM || spec.Height != cable.widthMM {
 		t.Fatalf("expected a %gx%gmm canvas, got %gx%g", cable.heightMM, cable.widthMM, spec.Width, spec.Height)
 	}
+}
 
+// The first face is the one that identifies the thing: QR code, name, asset ID.
+func TestCableFirstFaceCarriesTheIdentity(t *testing.T) {
+	spec := cableSpec(t)
 	foldY := spec.Height / 2
 
-	// The identity goes on the first face only; the second is for the description.
-	titles := 0
-	for _, item := range itemsOfType(spec, itemText) {
-		if item.Text != testCableID {
-			continue
+	for _, want := range []string{testCableID, testAssetID} {
+		found := 0
+		for _, item := range itemsOfType(spec, itemText) {
+			if item.Text != want {
+				continue
+			}
+			found++
+			if item.Y >= foldY {
+				t.Errorf("expected %q on the first face, got y=%g", want, item.Y)
+			}
 		}
-		titles++
-		if item.Y >= foldY {
-			t.Fatalf("expected the title on the first face, got y=%g", item.Y)
+		if found != 1 {
+			t.Errorf("expected %q exactly once, got %d", want, found)
 		}
-	}
-	if titles != 1 {
-		t.Fatalf("expected exactly one title, got %d", titles)
 	}
 
 	codes := itemsOfType(spec, itemQRCode)
@@ -225,36 +239,47 @@ func TestCableProfileGivesEachFaceItsOwnContent(t *testing.T) {
 		t.Fatalf("expected exactly one QR code, got %d", len(codes))
 	}
 	if codes[0].Y >= foldY {
-		t.Fatalf("expected the QR code on the first face, got y=%g", codes[0].Y)
+		t.Errorf("expected the QR code on the first face, got y=%g", codes[0].Y)
 	}
+}
 
-	// The second face gets the full width, so it holds more of the description
-	// than the column beside the QR code does.
-	var narrow, wide int
+// The description belongs only to the second face, across the full width. On the
+// first face it would have to share a narrow column with the name.
+func TestCableSecondFaceCarriesTheDescription(t *testing.T) {
+	spec := cableSpec(t)
+	foldY := spec.Height / 2
+
+	lines := 0
 	for _, item := range itemsOfType(spec, itemText) {
-		if item.Y >= foldY {
-			wide++
-			if item.Width <= spec.Width/2 {
-				t.Fatalf("expected the second face to use the full width, got %g", item.Width)
-			}
-		} else if item.Text != testCableID {
-			narrow++
+		if item.Text == testCableID || item.Text == testAssetID {
+			continue
+		}
+
+		lines++
+		if item.Y < foldY {
+			t.Errorf("expected no description on the first face, got %q", item.Text)
+		}
+		if item.Width <= spec.Width/2 {
+			t.Errorf("expected the second face to use the full width, got %g", item.Width)
 		}
 	}
-	if wide == 0 {
+
+	if lines == 0 {
 		t.Fatal("expected the description on the second face")
 	}
-	if narrow == 0 {
-		t.Fatal("expected the description to start on the first face too")
-	}
+}
 
-	// The fold runs across the label's width, which on the rotated canvas is a
-	// horizontal line splitting it into two equal faces. It is a hint for reading
-	// the preview only.
+// The fold runs across the label's width, which on the rotated canvas is a
+// horizontal line splitting it into two equal faces. It is a hint for reading the
+// preview only, and nothing may straddle it.
+func TestCableFoldSplitsTheFacesCleanly(t *testing.T) {
+	spec := cableSpec(t)
+
 	lines := itemsOfType(spec, itemLine)
 	if len(lines) != 1 {
 		t.Fatalf("expected one fold line, got %d", len(lines))
 	}
+
 	fold := lines[0]
 	if fold.Y1 != spec.Height/2 || fold.Y1 != fold.Y2 || fold.X1 != 0 || fold.X2 != spec.Width {
 		t.Fatalf("expected a horizontal fold line across the middle, got %+v", fold)
@@ -266,16 +291,15 @@ func TestCableProfileGivesEachFaceItsOwnContent(t *testing.T) {
 		t.Fatalf("expected no lines in the printed layout, got %d", len(printed))
 	}
 
-	// Nothing may cross the fold, or it would be cut in half.
 	for _, item := range spec.Items {
 		if item.Type == itemLine {
 			continue
 		}
 		if item.Y < fold.Y1 && item.Y+item.Height > fold.Y1+0.01 {
-			t.Fatalf("item straddles the fold: %+v", item)
+			t.Errorf("item straddles the fold: %+v", item)
 		}
 		if item.X+item.Width > spec.Width+0.01 || item.Y+item.Height > spec.Height+0.01 {
-			t.Fatalf("item outside the label: %+v", item)
+			t.Errorf("item outside the label: %+v", item)
 		}
 	}
 }
