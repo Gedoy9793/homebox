@@ -262,6 +262,43 @@ func (r *AttachmentRepo) GetFullPath(relativePath string) string {
 	return r.fullPath(relativePath)
 }
 
+// IndexablePhoto is a local photo attachment eligible for the image-search index.
+type IndexablePhoto struct {
+	ID       uuid.UUID
+	EntityID uuid.UUID
+	Path     string
+	Title    string
+}
+
+// ListIndexablePhotos returns type=photo attachments for a group, excluding
+// external link/url attachments and empty paths.
+func (r *AttachmentRepo) ListIndexablePhotos(ctx context.Context, groupID uuid.UUID) ([]IndexablePhoto, error) {
+	atts, err := r.db.Attachment.Query().
+		Where(
+			attachment.TypeEQ(attachment.TypePhoto),
+			attachment.HasEntityWith(entity.HasGroupWith(group.ID(groupID))),
+		).
+		WithEntity().
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]IndexablePhoto, 0, len(atts))
+	for _, att := range atts {
+		if isExternalLink(att.MimeType) || att.Path == "" || att.Edges.Entity == nil {
+			continue
+		}
+		out = append(out, IndexablePhoto{
+			ID:       att.ID,
+			EntityID: att.Edges.Entity.ID,
+			Path:     att.Path,
+			Title:    att.Title,
+		})
+	}
+	return out, nil
+}
+
 func (r *AttachmentRepo) GetConnString() string {
 	// Handle the default case for file storage
 	// which is file:///./ meaning relative to the current working directory

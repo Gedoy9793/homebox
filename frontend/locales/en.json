@@ -621,6 +621,20 @@
         "include_archive": "Include Archived Items",
         "insured": "Insured",
         "invalid_asset_id": "Invalid Asset ID",
+        "image_search": {
+            "choose_image": "Choose Image",
+            "description": "Take a photo or choose an image to find similar items in your inventory.",
+            "entry": "Search by Image",
+            "no_results": "No similar items found",
+            "query_preview": "Query image preview",
+            "searching": "Searching…",
+            "take_photo": "Take Photo",
+            "title": "Search by Image",
+            "toast": {
+                "failed": "Image search failed",
+                "unavailable": "Image search is not available on this server"
+            }
+        },
         "last": "Last",
         "lifetime_warranty": "Lifetime Warranty",
         "location": "Location",

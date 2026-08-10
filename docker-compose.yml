@@ -1,6 +1,6 @@
 services:
   homebox:
-    image: homebox
+    image: ghcr.io/gedoy9793/homebox:main
     build:
       context: .
       dockerfile: ./Dockerfile
@@ -14,5 +14,18 @@ services:
             - linux/arm
     environment:
       - HBOX_LOGGER_LEVEL=-1
+      - HBOX_IMAGE_SEARCH_URL=http://image-search:8080
     ports:
       - 3100:7745
+    depends_on:
+      - image-search
+
+  image-search:
+    image: ghcr.io/gedoy9793/homebox-image-search:main
+    build: ./services/image-search
+    volumes:
+      - image-search-data:/var/lib/image-search
+    # No host ports: reachable only on the compose network.
+
+volumes:
+  image-search-data:

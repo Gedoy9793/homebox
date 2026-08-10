@@ -575,6 +575,20 @@
         "include_archive": "包括已存档的物品",
         "insured": "保险",
         "invalid_asset_id": "无效的资产ID",
+        "image_search": {
+            "choose_image": "选择图片",
+            "description": "拍照或选择图片，在库存中查找相似物品。",
+            "entry": "以图搜物",
+            "no_results": "未找到相似物品",
+            "query_preview": "查询图片预览",
+            "searching": "搜索中…",
+            "take_photo": "拍照",
+            "title": "以图搜物",
+            "toast": {
+                "failed": "以图搜物失败",
+                "unavailable": "当前服务器未启用以图搜物功能"
+            }
+        },
         "last": "最后一页",
         "lifetime_warranty": "包含终身保修",
         "location": "位置",

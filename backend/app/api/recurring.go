@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hay-kot/httpkit/graceful"
 	"github.com/rs/zerolog/log"
+	"github.com/sysadminsmedia/homebox/backend/imagesearch"
 	"github.com/sysadminsmedia/homebox/backend/internal/sys/config"
 	"github.com/sysadminsmedia/homebox/backend/pkgs/utils"
 	"gocloud.dev/blob"
@@ -173,6 +174,20 @@ func registerRecurringTasks(app *app, cfg *config.Config, runner *graceful.Runne
 			err := app.services.BackgroundService.GetLatestGithubRelease(context.Background())
 			if err != nil {
 				log.Error().Err(err).Msg("failed to get latest github release")
+			}
+		}))
+	}
+
+	if imgCfg := imagesearch.LoadConfig(); imgCfg.Enabled() {
+		client := imagesearch.NewClient(imgCfg)
+		syncer := imagesearch.NewSyncer(client, app.repos)
+		log.Info().
+			Str("url", imgCfg.URL).
+			Dur("interval", imgCfg.SyncInterval).
+			Msg("image-search sync enabled")
+		runner.AddPlugin(NewTask("image-search-sync", imgCfg.SyncInterval, func(ctx context.Context) {
+			if err := syncer.SyncAll(ctx); err != nil {
+				log.Error().Err(err).Msg("failed to sync image-search index")
 			}
 		}))
 	}

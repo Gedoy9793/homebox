@@ -8,7 +8,9 @@
   import MdiLoading from "~icons/mdi/loading";
   import MdiMagnify from "~icons/mdi/magnify";
   import MdiDelete from "~icons/mdi/delete";
-  import { Button } from "@/components/ui/button";
+  import MdiCamera from "~icons/mdi/camera";
+  import { Button, buttonVariants } from "@/components/ui/button";
+  import { cn } from "@/lib/utils";
   import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
   import { Label } from "@/components/ui/label";
   import { Switch } from "@/components/ui/switch";
@@ -401,6 +403,13 @@
           <MdiMagnify v-else />
           {{ $t("global.search") }}
         </Button>
+        <NuxtLink
+          to="/items/image-search"
+          :class="cn(buttonVariants({ variant: 'outline' }), 'mb-auto flex h-12 w-full items-center justify-center gap-2 md:w-auto')"
+        >
+          <MdiCamera />
+          {{ $t("items.image_search.entry") }}
+        </NuxtLink>
       </div>
 
       <div class="flex w-full flex-wrap gap-2 py-2 md:flex-nowrap">
