@@ -1,66 +1,65 @@
 <template>
   <div class="flex flex-col gap-1">
-    <Label :for="id" class="px-1">
-      {{ $t("components.location.selector.parent_location") }}
-    </Label>
-
-    <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-1">
-      <Popover v-model:open="open">
-        <PopoverTrigger as-child>
-          <Button :id="id" variant="outline" role="combobox" :aria-expanded="open" class="w-full justify-between">
-            <span class="min-w-0 flex-auto truncate text-left">
-              {{ value && value.name ? value.name : $t("components.location.selector.select_location") }}
-            </span>
-
-            <span class="ml-2 flex items-center">
-              <button
-                v-if="value"
-                type="button"
-                class="shrink-0 rounded p-1 hover:bg-primary/20"
-                :aria-label="$t('components.location.selector.clear')"
-                @click.stop.prevent="clearSelection"
-              >
-                <X class="size-4" />
-              </button>
-
-              <ChevronsUpDown class="ml-2 size-4 shrink-0 opacity-50" />
-            </span>
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent class="w-[--reka-popper-anchor-width] p-0">
-          <Command :ignore-filter="true">
-            <CommandInput
-              v-model="search"
-              :placeholder="$t('components.location.selector.search_location')"
-              :display-value="_ => ''"
-            />
-            <CommandEmpty>{{ $t("components.location.selector.no_location_found") }}</CommandEmpty>
-            <CommandList>
-              <CommandGroup>
-                <CommandItem
-                  v-for="location in filteredLocations"
-                  :key="location.id"
-                  :value="location.id"
-                  @select="selectLocation(location as unknown as EntitySummary)"
-                >
-                  <Check :class="cn('mr-2 h-4 w-4', value?.id === location.id ? 'opacity-100' : 'opacity-0')" />
-                  <div>
-                    <div class="flex w-full">
-                      {{ location.name }}
-                    </div>
-                    <div v-if="location.name !== location.treeString" class="mt-1 text-xs text-muted-foreground">
-                      {{ location.treeString }}
-                    </div>
-                  </div>
-                </CommandItem>
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-
+    <div class="flex items-center justify-between gap-2">
+      <Label :for="id" class="px-1">
+        {{ $t("components.location.selector.parent_location") }}
+      </Label>
       <LocationScanSelect @scanned="selectScanned" />
     </div>
+
+    <Popover v-model:open="open">
+      <PopoverTrigger as-child>
+        <Button :id="id" variant="outline" role="combobox" :aria-expanded="open" class="w-full justify-between">
+          <span class="min-w-0 flex-auto truncate text-left">
+            {{ value && value.name ? value.name : $t("components.location.selector.select_location") }}
+          </span>
+
+          <span class="ml-2 flex items-center">
+            <button
+              v-if="value"
+              type="button"
+              class="shrink-0 rounded p-1 hover:bg-primary/20"
+              :aria-label="$t('components.location.selector.clear')"
+              @click.stop.prevent="clearSelection"
+            >
+              <X class="size-4" />
+            </button>
+
+            <ChevronsUpDown class="ml-2 size-4 shrink-0 opacity-50" />
+          </span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent class="w-[--reka-popper-anchor-width] p-0">
+        <Command :ignore-filter="true">
+          <CommandInput
+            v-model="search"
+            :placeholder="$t('components.location.selector.search_location')"
+            :display-value="_ => ''"
+          />
+          <CommandEmpty>{{ $t("components.location.selector.no_location_found") }}</CommandEmpty>
+          <CommandList>
+            <CommandGroup>
+              <CommandItem
+                v-for="location in filteredLocations"
+                :key="location.id"
+                :value="location.id"
+                @select="selectLocation(location as unknown as EntitySummary)"
+              >
+                <Check :class="cn('mr-2 h-4 w-4', value?.id === location.id ? 'opacity-100' : 'opacity-0')" />
+                <div>
+                  <div class="flex w-full">
+                    {{ location.name }}
+                  </div>
+                  <div v-if="location.name !== location.treeString" class="mt-1 text-xs text-muted-foreground">
+                    {{ location.treeString }}
+                  </div>
+                </div>
+              </CommandItem>
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   </div>
 </template>
 
@@ -116,7 +115,6 @@
     }
 
     selectLocation(found as unknown as EntitySummary);
-    open.value = false;
   }
 
   function clearSelection() {

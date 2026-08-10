@@ -8,6 +8,7 @@
   import { useI18n } from "vue-i18n";
   import { locationIdFromUrl } from "~~/lib/labels/label-url";
   import { Button } from "~/components/ui/button";
+  import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
   import MdiQrcodeScan from "~icons/mdi/qrcode-scan";
 
@@ -83,14 +84,6 @@
     selectedSource.value = null;
   }
 
-  function toggle(): void {
-    if (scanning.value) {
-      stop();
-    } else {
-      start();
-    }
-  }
-
   watch(selectedSource, async source => {
     if (!scanning.value || !source || !video.value) {
       return;
@@ -134,30 +127,34 @@
 </script>
 
 <template>
-  <div class="contents">
-    <Button
-      type="button"
-      variant="outline"
-      size="icon"
-      :aria-label="$t('components.location.selector.scan')"
-      :aria-pressed="scanning"
-      @click="toggle"
-    >
-      <MdiQrcodeScan class="size-4" />
-    </Button>
+  <!-- A popover rather than an inline panel, so dropping this button into a form
+       row cannot disturb that row's layout. -->
+  <Popover :open="scanning" @update:open="value => (value ? start() : stop())">
+    <PopoverTrigger as-child>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        class="h-7 gap-1 px-2 text-xs"
+        :aria-label="$t('components.location.selector.scan')"
+      >
+        <MdiQrcodeScan class="size-4" />
+        {{ $t("components.location.selector.scan") }}
+      </Button>
+    </PopoverTrigger>
 
-    <div v-if="scanning" class="col-span-full flex flex-col gap-2 rounded-md border p-2">
-      <!-- eslint-disable-next-line tailwindcss/no-custom-classname -->
-      <video ref="video" class="aspect-video w-full rounded bg-muted" poster="data:image/gif,AAAA" />
+    <PopoverContent class="w-80 p-2">
+      <div class="flex flex-col gap-2">
+        <!-- eslint-disable-next-line tailwindcss/no-custom-classname -->
+        <video ref="video" class="aspect-video w-full rounded bg-muted" poster="data:image/gif,AAAA" />
 
-      <p class="text-xs text-muted-foreground">
-        {{ $t("components.location.selector.scan_hint") }}
-      </p>
-      <p v-if="error" class="text-xs text-destructive">{{ error }}</p>
+        <p class="text-xs text-muted-foreground">
+          {{ $t("components.location.selector.scan_hint") }}
+        </p>
+        <p v-if="error" class="text-xs text-destructive">{{ error }}</p>
 
-      <div class="flex gap-2">
         <Select v-if="sources.length > 1" v-model="selectedSource">
-          <SelectTrigger class="h-8 flex-1 text-xs">
+          <SelectTrigger class="h-8 text-xs">
             <SelectValue :placeholder="$t('scanner.select_video_source')" />
           </SelectTrigger>
           <SelectContent>
@@ -166,10 +163,7 @@
             </SelectItem>
           </SelectContent>
         </Select>
-        <Button type="button" variant="ghost" size="sm" @click="stop">
-          {{ $t("global.cancel") }}
-        </Button>
       </div>
-    </div>
-  </div>
+    </PopoverContent>
+  </Popover>
 </template>
