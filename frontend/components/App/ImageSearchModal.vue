@@ -15,7 +15,13 @@
         </div>
 
         <!-- Same live camera preview pattern as AppScannerModal -->
-        <video ref="video" class="aspect-video w-full rounded-lg bg-muted shadow" poster="data:image/gif,AAAA" muted playsinline />
+        <video
+          ref="video"
+          class="aspect-video w-full rounded-lg bg-muted shadow"
+          poster="data:image/gif,AAAA"
+          muted
+          playsinline
+        />
 
         <div class="mt-4 flex flex-col gap-3">
           <Select v-model="selectedSource">
@@ -35,20 +41,37 @@
             {{ loading ? t("items.image_search.searching") : t("items.image_search.capture_search") }}
           </Button>
         </div>
-
-        <section v-if="searched" class="mt-4">
-          <p v-if="!loading && results.length === 0" class="py-4 text-center text-sm text-muted-foreground">
-            {{ $t("items.image_search.no_results") }}
-          </p>
-          <div v-else-if="results.length > 0" class="grid max-h-72 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
-            <div v-for="item in results" :key="item.id" @click="closeDialog(DialogID.ImageSearch)">
-              <ItemCard :item="item" />
-            </div>
-          </div>
-        </section>
       </div>
     </DialogScrollContent>
   </Dialog>
+
+  <!-- Results shown as a second popup so users don't scroll under the camera -->
+  <AlertDialog :open="showResults" @update:open="onResultsOpenChange">
+    <AlertDialogContent class="flex max-h-[85vh] flex-col gap-4 overflow-hidden sm:max-w-2xl">
+      <AlertDialogHeader>
+        <AlertDialogTitle>{{ t("items.image_search.results_title") }}</AlertDialogTitle>
+        <AlertDialogDescription>
+          {{
+            results.length === 0
+              ? t("items.image_search.no_results")
+              : t("items.results", { total: results.length })
+          }}
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+
+      <div v-if="results.length > 0" class="min-h-0 flex-1 overflow-y-auto">
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div v-for="item in results" :key="item.id" @click="openResult(item)">
+            <ItemCard :item="item" />
+          </div>
+        </div>
+      </div>
+
+      <AlertDialogFooter>
+        <AlertDialogCancel>{{ t("items.image_search.continue_camera") }}</AlertDialogCancel>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 </template>
 
 <script setup lang="ts">
@@ -56,6 +79,15 @@
   import { useI18n } from "vue-i18n";
   import { DialogID } from "@/components/ui/dialog-provider/utils";
   import { Dialog, DialogHeader, DialogScrollContent, DialogTitle } from "@/components/ui/dialog";
+  import {
+    AlertDialog,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+  } from "@/components/ui/alert-dialog";
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
   import { Button } from "@/components/ui/button";
   import { toast } from "@/components/ui/sonner";
@@ -78,7 +110,7 @@
   const cameraReady = ref(false);
   const errorMessage = ref<string | null>(null);
   const loading = ref(false);
-  const searched = ref(false);
+  const showResults = ref(false);
   const results = ref<EntitySummary[]>([]);
 
   const LAST_USED_DEVICE_ID_KEY = "homebox:lastUsedDeviceId";
@@ -117,7 +149,7 @@
 
   const listSources = async () => {
     errorMessage.value = null;
-    searched.value = false;
+    showResults.value = false;
     results.value = [];
 
     if (!(navigator && navigator.mediaDevices && "enumerateDevices" in navigator.mediaDevices)) {
@@ -192,7 +224,6 @@
     }
 
     loading.value = true;
-    searched.value = true;
     results.value = [];
 
     const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
@@ -209,6 +240,17 @@
       return;
     }
     results.value = data ?? [];
+    showResults.value = true;
+  };
+
+  const onResultsOpenChange = (openResults: boolean) => {
+    showResults.value = openResults;
+  };
+
+  const openResult = (item: EntitySummary) => {
+    showResults.value = false;
+    closeDialog(DialogID.ImageSearch);
+    navigateTo(`/item/${item.id}`);
   };
 
   watch(open, async isOpen => {
@@ -218,7 +260,7 @@
       stopCamera();
       sources.value = [];
       selectedSource.value = null;
-      searched.value = false;
+      showResults.value = false;
       results.value = [];
       errorMessage.value = null;
     }

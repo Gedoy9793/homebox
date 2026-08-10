@@ -623,11 +623,13 @@
         "invalid_asset_id": "Invalid Asset ID",
         "image_search": {
             "capture_search": "Capture & Search",
+            "continue_camera": "Back to Camera",
             "choose_image": "Choose Image",
             "description": "Take a photo or choose an image to find similar items in your inventory.",
             "entry": "Search by Image",
             "no_results": "No similar items found",
             "query_preview": "Query image preview",
+            "results_title": "Similar Items",
             "searching": "Searching…",
             "take_photo": "Take Photo",
             "title": "Search by Image",

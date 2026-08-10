@@ -577,11 +577,13 @@
         "invalid_asset_id": "无效的资产ID",
         "image_search": {
             "capture_search": "拍照搜索",
+            "continue_camera": "继续拍照",
             "choose_image": "选择图片",
             "description": "拍照或选择图片，在库存中查找相似物品。",
             "entry": "以图搜物",
             "no_results": "未找到相似物品",
             "query_preview": "查询图片预览",
+            "results_title": "相似物品",
             "searching": "搜索中…",
             "take_photo": "拍照",
             "title": "以图搜物",
