@@ -98,11 +98,13 @@ func buildSpec(req labelRequest, prof profile) (labelSpec, error) {
 	return spec, nil
 }
 
-// layoutStandard places the QR code on the left with the title and description
-// in a column beside it, running the column down the full height of the label.
-// Description that still does not fit is dropped: a label is a summary, and
-// re-flowing the tail under the QR code at a different width reads as two
-// disconnected blocks.
+// layoutStandard puts the QR code top left with the headline beside it, and runs
+// the description underneath both, across the whole label.
+//
+// The description gets the full width because it is the part that reads as a
+// sentence: in the column beside the QR code it is barely five characters wide
+// and breaks into fragments. Whatever still does not fit is dropped — a label is
+// a summary.
 func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Face) []labelItem {
 	var items []labelItem
 
@@ -141,9 +143,18 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Fac
 			textX, cursor, textWidth, prof.bodyMM, false)
 	}
 
-	remaining := prof.heightMM - prof.paddingMM - cursor
-	appendLines(&items, wrapText(req.description, bodyFace, textWidth, int(remaining/bodyLineHeight)),
-		textX, cursor, textWidth, prof.bodyMM, false)
+	// Below both the QR code and the headline, so neither is overlapped.
+	descriptionTop := max(prof.paddingMM+qrSize, cursor)
+	fullWidth := prof.widthMM - 2*prof.paddingMM
+	remaining := prof.heightMM - prof.paddingMM - descriptionTop
+
+	// This is a strip a line or two tall, not a block, so a paragraph break would
+	// spend a whole line on nothing. Homebox joins the name and the location with
+	// one; here they read fine side by side.
+	description := strings.ReplaceAll(req.description, "\n", " ")
+
+	appendLines(&items, wrapText(description, bodyFace, fullWidth, int(remaining/bodyLineHeight)),
+		prof.paddingMM, descriptionTop, fullWidth, prof.bodyMM, false)
 
 	return items
 }

@@ -234,6 +234,50 @@ func TestBothProfilesLeadWithTheAssetID(t *testing.T) {
 	}
 }
 
+// On the small stock the description runs under the QR code and the headline,
+// across the whole label: beside the QR code it would be a few characters wide.
+func TestStandardDescriptionRunsFullWidthUnderTheCode(t *testing.T) {
+	standard := profiles[profileStandard]
+
+	spec, err := buildSpec(labelRequest{
+		title:       testItemName,
+		description: "Location: Rack 3",
+		assetID:     testAssetID,
+		url:         "https://example.com/a/000-042",
+	}, standard)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	codes := itemsOfType(spec, itemQRCode)
+	if len(codes) != 1 {
+		t.Fatalf("expected one QR code, got %d", len(codes))
+	}
+	codeBottom := codes[0].Y + codes[0].Height
+
+	description := 0
+	for _, item := range itemsOfType(spec, itemText) {
+		if item.Text == testAssetID || strings.HasPrefix(testItemName, item.Text) {
+			continue
+		}
+
+		description++
+		if item.Y+0.01 < codeBottom {
+			t.Errorf("expected the description below the QR code (y=%g, code ends at %g)", item.Y, codeBottom)
+		}
+		if item.X > standard.paddingMM+0.01 {
+			t.Errorf("expected the description to start at the left margin, got x=%g", item.X)
+		}
+		if item.Width < standard.widthMM-2*standard.paddingMM-0.01 {
+			t.Errorf("expected the description to span the label, got width=%g", item.Width)
+		}
+	}
+
+	if description == 0 {
+		t.Fatal("expected the description to be laid out")
+	}
+}
+
 func TestLayoutOmitsQRCodeWithoutURL(t *testing.T) {
 	spec, err := buildSpec(labelRequest{title: "Shelf A"}, profiles[profileStandard])
 	if err != nil {
