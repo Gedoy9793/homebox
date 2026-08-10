@@ -32,6 +32,15 @@ func TestGenerateSampleLabels(t *testing.T) {
 			},
 			prof: profiles[profileCable],
 		},
+		"location": {
+			request: labelRequest{
+				title:       "第二层",
+				description: "车库 / 货架 A\n备件与耗材",
+				assetID:     "000-007",
+				url:         "https://homebox.example.com/location/abc",
+			},
+			prof: profiles[profileLocation],
+		},
 		"chinese": {
 			request: labelRequest{
 				title:       "三养辣鸡肉芝士味拌面（油炸方便面）",

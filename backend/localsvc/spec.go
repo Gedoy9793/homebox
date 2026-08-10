@@ -131,6 +131,7 @@ type profile struct {
 const (
 	profileStandard = "standard"
 	profileCable    = "cable"
+	profileLocation = "location"
 
 	defaultProfileName = profileStandard
 )
@@ -146,6 +147,17 @@ var profiles = map[string]profile{
 		paddingMM: 1,
 		titleMM:   2.8,
 		bodyMM:    2,
+	},
+	// A 60x40mm label for a location. Bigger than an item's, because a location
+	// label is read from across the room and carries the path down to it as well
+	// as its own description.
+	profileLocation: {
+		name:      profileLocation,
+		widthMM:   60,
+		heightMM:  40,
+		paddingMM: 2,
+		titleMM:   5,
+		bodyMM:    3,
 	},
 	// A cable flag: 25x38mm, folded in half across its width into two 12.5x38mm
 	// faces, so the same content is printed twice and stays readable from either

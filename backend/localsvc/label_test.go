@@ -653,6 +653,67 @@ func TestLabelEndpointPrefersTheRecordOverTheRequestText(t *testing.T) {
 	}
 }
 
+// A location label shows the path down to it and its own description. Neither the
+// name of the parent on its own nor Homebox's "Homebox Location" placeholder tells
+// the reader anything.
+func TestLocationDescriptionIsThePathAndItsOwnText(t *testing.T) {
+	record := entityRecord{
+		name:        "Shelf 2",
+		description: "Spare parts",
+		location:    "Cupboard A",
+		path:        []string{"Garage", "Cupboard A"},
+		isLocation:  true,
+	}
+
+	if got := recordDescription(record); got != "Garage / Cupboard A\nSpare parts" {
+		t.Fatalf("unexpected description %q", got)
+	}
+
+	// Without a description of its own, just the path.
+	record.description = ""
+	if got := recordDescription(record); got != "Garage / Cupboard A" {
+		t.Fatalf("unexpected description %q", got)
+	}
+
+	// An item gets the location it sits in instead.
+	if got := recordDescription(entityRecord{location: testLocationName}); got != testLocationName {
+		t.Fatalf("unexpected description %q", got)
+	}
+}
+
+// The placeholder Homebox puts in a location label's description must never reach
+// the label; the record supplies the text instead.
+func TestLocationLabelLeavesOutTheHomeboxPlaceholder(t *testing.T) {
+	spec, err := buildSpec(labelRequest{
+		title:       "Shelf 2",
+		description: recordDescription(entityRecord{path: []string{"Garage"}, isLocation: true}),
+		assetID:     testAssetID,
+		url:         "https://homebox.example.com/location/abc",
+	}, profiles[profileLocation])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if spec.Width != 60 || spec.Height != 40 {
+		t.Fatalf("expected a 60x40mm label, got %gx%g", spec.Width, spec.Height)
+	}
+
+	var text []string
+	for _, item := range itemsOfType(spec, itemText) {
+		text = append(text, item.Text)
+	}
+	joined := strings.Join(text, " ")
+
+	for _, want := range []string{testAssetID, "Shelf 2", "Garage"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("expected %q on the label, got %q", want, joined)
+		}
+	}
+	if strings.Contains(joined, "Homebox") {
+		t.Errorf("expected the placeholder to be gone, got %q", joined)
+	}
+}
+
 func TestEmbedTextRejectsNonPNG(t *testing.T) {
 	for name, input := range map[string][]byte{
 		"empty":         {},

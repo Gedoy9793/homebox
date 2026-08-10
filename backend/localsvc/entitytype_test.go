@@ -2,6 +2,7 @@ package localsvc
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
@@ -39,6 +40,12 @@ func TestEntityPredicateReadsLabelURLs(t *testing.T) {
 	}
 }
 
+// profileForTypeName exercises profileForRecord for the type-name cases, which is
+// most of them.
+func profileForTypeName(typeName string) string {
+	return profileForRecord(entityRecord{typeName: typeName})
+}
+
 func TestProfileForTypeName(t *testing.T) {
 	t.Setenv(EnvProfileMap, "")
 
@@ -54,6 +61,21 @@ func TestProfileForTypeName(t *testing.T) {
 		if got := profileForTypeName(typeName); got != "" {
 			t.Errorf("expected %q to make no choice, got %q", typeName, got)
 		}
+	}
+}
+
+// A location label carries the path down to it and its own description, which the
+// small stock has no room for.
+func TestProfileForRecordPicksTheLargeStockForLocations(t *testing.T) {
+	t.Setenv(EnvProfileMap, "")
+
+	if got := profileForRecord(entityRecord{typeName: "Shelf", isLocation: true}); got != profileLocation {
+		t.Fatalf("expected a location label, got %q", got)
+	}
+	// A mapping still overrides it, and so does a cable-like type name.
+	t.Setenv(EnvProfileMap, "Shelf=standard")
+	if got := profileForRecord(entityRecord{typeName: "Shelf", isLocation: true}); got != profileStandard {
+		t.Fatalf("expected the mapping to win, got %q", got)
 	}
 }
 
@@ -85,7 +107,7 @@ func TestProfileMapIgnoresMalformedEntries(t *testing.T) {
 func TestEntityTypeNameWithoutDatabase(t *testing.T) {
 	database.Store(nil)
 
-	if got := lookupEntity(context.Background(), testAssetURL); got != (entityRecord{}) {
+	if got := lookupEntity(context.Background(), testAssetURL); !reflect.DeepEqual(got, entityRecord{}) {
 		t.Fatalf("expected nothing without a database, got %+v", got)
 	}
 }
@@ -165,9 +187,10 @@ func TestLookupEntityResolvesFromDatabase(t *testing.T) {
 			typeName: "线缆",
 			name:     "Office AP uplink",
 			location: testLocationName,
+			path:     []string{testLocationName},
 			assetID:  42,
 		}
-		if got != want {
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("expected %q to resolve to %+v, got %+v", labelURL, want, got)
 		}
 		if got.assetID.String() != "000-042" {
@@ -177,13 +200,13 @@ func TestLookupEntityResolvesFromDatabase(t *testing.T) {
 
 	// A record that does not exist must not fail the label.
 	unknown := "https://homebox.example.com/a/999-999"
-	if got := lookupEntity(ctx, unknown); got != (entityRecord{}) {
+	if got := lookupEntity(ctx, unknown); !reflect.DeepEqual(got, entityRecord{}) {
 		t.Errorf("expected nothing for %q, got %+v", unknown, got)
 	}
 
 	// And the whole point: this picks the label stock.
 	t.Setenv(EnvProfileMap, "")
-	if got := profileForTypeName(lookupEntity(ctx, testAssetURL).typeName); got != profileCable {
+	if got := profileForRecord(lookupEntity(ctx, testAssetURL)); got != profileCable {
 		t.Errorf("expected a cable flag, got %q", got)
 	}
 }

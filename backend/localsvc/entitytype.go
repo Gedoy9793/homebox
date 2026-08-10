@@ -2,6 +2,7 @@ package localsvc
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -33,7 +34,12 @@ const EnvProfileMap = "HBOX_LOCAL_SVC_PROFILE_MAP"
 // being configured.
 var cableTypeHints = []string{"cable", "线缆", "网线", "patch lead", "patch cable"}
 
-const typeLookupTimeout = 3 * time.Second
+const (
+	typeLookupTimeout = 3 * time.Second
+
+	// maxAncestryDepth bounds the walk up the parent chain.
+	maxAncestryDepth = 8
+)
 
 // database is set by Bind. Nil until then, in which case every label falls back
 // to the default profile.
@@ -50,20 +56,25 @@ func Bind(client *ent.Client) {
 	log.Debug().Msg("Bundled label service can now pick label stock per entity type")
 }
 
-func profileForTypeName(typeName string) string {
-	if typeName == "" {
-		return ""
-	}
-
-	if mapped, ok := profileMap()[strings.ToLower(typeName)]; ok {
+// profileForRecord picks the label stock for a record. An empty result leaves the
+// choice to the configuration.
+func profileForRecord(record entityRecord) string {
+	// An operator's mapping wins over anything guessed here.
+	if mapped, ok := profileMap()[strings.ToLower(record.typeName)]; ok && record.typeName != "" {
 		return mapped
 	}
 
-	lowered := strings.ToLower(typeName)
+	lowered := strings.ToLower(record.typeName)
 	for _, hint := range cableTypeHints {
 		if strings.Contains(lowered, hint) {
 			return profileCable
 		}
+	}
+
+	// A location label carries a path and a description, which want more room than
+	// the small stock has.
+	if record.isLocation {
+		return profileLocation
 	}
 
 	return ""
@@ -76,10 +87,19 @@ func profileForTypeName(typeName string) string {
 // newlines and an English "Location: " in front of the parent. Reading the fields
 // separately lets the layout spend the 25mm it has on the values themselves.
 type entityRecord struct {
-	typeName string
-	name     string
+	typeName    string
+	name        string
+	description string
+
+	// location is the name of the parent, and path the whole chain above this
+	// record from the top down. An item label only has room for the former; a
+	// location label has room for the latter, and needs it — "Shelf 2" on its own
+	// says nothing about which cupboard.
 	location string
-	assetID  repo.AssetID
+	path     []string
+
+	assetID    repo.AssetID
+	isLocation bool
 }
 
 // lookupEntity resolves the record behind a label URL such as
@@ -108,18 +128,47 @@ func lookupEntity(ctx context.Context, labelURL string) entityRecord {
 	}
 
 	record := entityRecord{
-		name:    found.Name,
-		assetID: repo.AssetID(found.AssetID),
+		name:        found.Name,
+		description: found.Description,
+		assetID:     repo.AssetID(found.AssetID),
 	}
 
 	if found.Edges.EntityType != nil {
 		record.typeName = found.Edges.EntityType.Name
+		record.isLocation = found.Edges.EntityType.IsLocation
 	}
 	if found.Edges.Parent != nil {
 		record.location = found.Edges.Parent.Name
+		record.path = ancestry(ctx, found.Edges.Parent)
 	}
 
 	return record
+}
+
+// ancestry walks up from start and returns the names from the top down, so a
+// label can say where something lives without the reader looking it up.
+//
+// One query per level: a home inventory is a handful of levels deep and this runs
+// against the local database, so it is not worth a recursive CTE. The depth is
+// capped anyway, in case a parent chain ever loops.
+func ancestry(ctx context.Context, start *ent.Entity) []string {
+	names := []string{start.Name}
+	current := start
+
+	for range maxAncestryDepth {
+		parent, err := current.QueryParent().Only(ctx)
+		if err != nil {
+			// No parent, or it cannot be read: either way the chain ends here.
+			break
+		}
+
+		names = append(names, parent.Name)
+		current = parent
+	}
+
+	slices.Reverse(names)
+
+	return names
 }
 
 // entityPredicate turns the tail of a Homebox record URL into a query.

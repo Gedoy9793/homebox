@@ -148,12 +148,7 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Fac
 	fullWidth := prof.widthMM - 2*prof.paddingMM
 	remaining := prof.heightMM - prof.paddingMM - descriptionTop
 
-	// This is a strip a line or two tall, not a block, so a paragraph break would
-	// spend a whole line on nothing. Homebox joins the name and the location with
-	// one; here they read fine side by side.
-	description := strings.ReplaceAll(req.description, "\n", " ")
-
-	appendLines(&items, wrapText(description, bodyFace, fullWidth, int(remaining/bodyLineHeight)),
+	appendLines(&items, wrapText(req.description, bodyFace, fullWidth, int(remaining/bodyLineHeight)),
 		prof.paddingMM, descriptionTop, fullWidth, prof.bodyMM, false)
 
 	return items

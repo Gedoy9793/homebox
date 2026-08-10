@@ -33,11 +33,17 @@ func handleLabel(w http.ResponseWriter, r *http.Request) {
 	// One lookup: it supplies the content and decides the label stock.
 	record := lookupEntity(r.Context(), labelURL)
 
-	request := labelRequest{
-		title:       firstNonEmptyString(record.name, query.Get("TitleText")),
-		description: firstNonEmptyString(record.location, query.Get("DescriptionText")),
-		assetID:     record.assetID.String(),
-		url:         labelURL,
+	request := labelRequest{url: labelURL}
+
+	if record.name != "" {
+		request.title = record.name
+		request.description = recordDescription(record)
+		request.assetID = record.assetID.String()
+	} else {
+		// Fallback: the text labelmaker assembled. Its newlines are flattened
+		// because they join fields that a label reads better side by side.
+		request.title = query.Get("TitleText")
+		request.description = strings.ReplaceAll(query.Get("DescriptionText"), "\n", " ")
 	}
 
 	// Operator-configured extra text is not part of any record, so it can only
@@ -46,11 +52,11 @@ func handleLabel(w http.ResponseWriter, r *http.Request) {
 		request.description = strings.TrimSpace(request.description + " " + additional)
 	}
 
-	// An explicit request wins; otherwise the entity's type decides, so a cable
-	// gets a flag label and everything else the default stock.
+	// An explicit request wins; otherwise the record decides, so a cable gets a
+	// flag, a location the large stock, and everything else the default.
 	requested := query.Get("LabelProfile")
 	if requested == "" {
-		requested = profileForTypeName(record.typeName)
+		requested = profileForRecord(record)
 	}
 
 	image, err := renderLabel(request, resolveProfile(requested, query.Get("LabelSize")))
@@ -67,6 +73,29 @@ func handleLabel(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write(image); err != nil {
 		log.Warn().Err(err).Msg("Can not write label response")
 	}
+}
+
+// recordDescription is what goes under the headline.
+//
+// A location gets the path down to it and then its own description: on its own,
+// "Shelf 2" does not say which cupboard. Anything else gets the location it sits
+// in, which is the one thing you want a label to tell you when the thing is not
+// where you expected.
+func recordDescription(record entityRecord) string {
+	if !record.isLocation {
+		return record.location
+	}
+
+	var parts []string
+
+	if path := strings.Join(record.path, " / "); path != "" {
+		parts = append(parts, path)
+	}
+	if record.description != "" {
+		parts = append(parts, record.description)
+	}
+
+	return strings.Join(parts, "\n")
 }
 
 // renderLabel produces the PNG together with its embedded layout.
