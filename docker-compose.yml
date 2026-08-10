@@ -15,8 +15,13 @@ services:
     environment:
       - HBOX_LOGGER_LEVEL=-1
       - HBOX_IMAGE_SEARCH_URL=http://image-search:8080
+      # Avoid file:/// + prefix=data (fileblob treats "/" root as escaping).
+      - HBOX_STORAGE_CONN_STRING=file:///data?no_tmp_dir=true
+      - HBOX_STORAGE_PREFIX_PATH=
     ports:
       - 3100:7745
+    volumes:
+      - homebox-data:/data
     depends_on:
       - image-search
 
@@ -28,4 +33,5 @@ services:
     # No host ports: reachable only on the compose network.
 
 volumes:
+  homebox-data:
   image-search-data:

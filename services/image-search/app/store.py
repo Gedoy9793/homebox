@@ -43,7 +43,10 @@ class GroupStore:
         self._load()
 
     def _load(self) -> None:
-        self.dir.mkdir(parents=True, exist_ok=True)
+        # Do not mkdir here: list/search must work before any write, and a
+        # root-owned Docker volume would otherwise 500 on every empty group.
+        if not self.dir.exists():
+            return
         if self.meta_path.exists() and self.index_path.exists():
             with self.meta_path.open("r", encoding="utf-8") as f:
                 meta = json.load(f)
@@ -180,7 +183,10 @@ class StoreManager:
         self.dim = dim
         self.model_name = model_name
         self.root = root
-        self.root.mkdir(parents=True, exist_ok=True)
+        try:
+            self.root.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            logger.warning("data dir %s not writable yet (%s); writes will fail until fixed", self.root, exc)
         self._stores: dict[str, GroupStore] = {}
         self._lock = threading.Lock()
 

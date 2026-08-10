@@ -17,6 +17,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         git \
+        gosu \
         libgomp1 \
         libgl1 \
         libglib2.0-0 \
@@ -30,6 +31,8 @@ RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
 COPY app ./app
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Prefetch DINOv2 via torch.hub (clones facebookresearch/dinov2 from GitHub).
 RUN mkdir -p /opt/torch-cache \
@@ -47,7 +50,8 @@ RUN mkdir -p /var/lib/image-search \
     && useradd --create-home --uid 1000 --shell /usr/sbin/nologin imagesearch \
     && chown -R imagesearch:imagesearch /var/lib/image-search /opt/torch-cache
 
-USER imagesearch
+# Stay root for entrypoint so it can chown the mounted volume, then drop to
+# imagesearch. Do not set USER here.
 VOLUME ["/var/lib/image-search"]
 EXPOSE 8080
 
@@ -55,4 +59,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

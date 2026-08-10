@@ -68,8 +68,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # Production stage
 FROM public.ecr.aws/docker/library/alpine:latest
 ENV HBOX_MODE=production
-ENV HBOX_STORAGE_CONN_STRING=file:///?no_tmp_dir=true
-ENV HBOX_STORAGE_PREFIX_PATH=data
+# Bucket root must be /data, not /. fileblob rejects keys under a "/" root
+# (HasPrefix check against "//"), which surfaces as "escapes bucket root".
+ENV HBOX_STORAGE_CONN_STRING=file:///data?no_tmp_dir=true
+ENV HBOX_STORAGE_PREFIX_PATH=
 ENV HBOX_DATABASE_SQLITE_PATH=/data/homebox.db?_pragma=busy_timeout=2000&_pragma=journal_mode=WAL&_fk=1&_time_format=sqlite
 
 # Install necessary runtime dependencies
