@@ -118,6 +118,13 @@
             "randomize": "Randomize color"
         },
         "form": {
+            "camera_capture": {
+                "add_photos": "Add {count, plural, =0 {photos} =1 {1 photo} other {{count} photos}}",
+                "capture": "Capture",
+                "description": "Take one or more photos with your camera. They will be added to this item.",
+                "take_photo": "Take Photo",
+                "title": "Take Photo"
+            },
             "min_length": "min {min}",
             "password": {
                 "toggle_show": "Toggle Password Show"

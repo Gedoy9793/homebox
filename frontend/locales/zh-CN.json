@@ -118,6 +118,13 @@
             "randomize": "随机颜色"
         },
         "form": {
+            "camera_capture": {
+                "add_photos": "添加 {count, plural, =0 {照片} =1 {1 张照片} other {{count} 张照片}}",
+                "capture": "拍照",
+                "description": "使用摄像头拍摄一张或多张照片，将添加到当前物品。",
+                "take_photo": "拍照",
+                "title": "拍照"
+            },
             "min_length": "最少 {min}",
             "password": {
                 "toggle_show": "切换密码显示"
