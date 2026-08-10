@@ -151,37 +151,37 @@ describe("readLabelSpecFromPng", () => {
 // TypeScript, so the real output is pinned here.
 describe("the bundled label service", () => {
   const emitted = {
-    width: 40,
-    height: 30,
+    width: 25,
+    height: 15,
     items: [
       {
         type: "qrcode",
-        x: 1.5,
-        y: 1.5,
-        width: 16,
-        height: 16,
+        x: 1,
+        y: 1,
+        width: 10,
+        height: 10,
         text: "https://homebox.example.com/a/000-042",
       },
       {
         type: "text",
-        x: 18.7,
-        y: 1.5,
-        width: 19.8,
-        height: 4.25,
+        x: 12.2,
+        y: 1,
+        width: 11.8,
+        height: 3.5,
         text: "000-042",
-        fontHeight: 3.4,
+        fontHeight: 2.8,
         bold: true,
         valign: "center",
         wrap: "none",
       },
       {
         type: "text",
-        x: 18.7,
-        y: 5.75,
-        width: 19.8,
-        height: 3,
-        text: "Netgear GS308",
-        fontHeight: 2.4,
+        x: 12.2,
+        y: 4.5,
+        width: 11.8,
+        height: 2.5,
+        text: "Netgear",
+        fontHeight: 2,
         valign: "center",
         wrap: "none",
       },
@@ -191,10 +191,10 @@ describe("the bundled label service", () => {
   it("emits a layout this parser accepts", () => {
     const spec = parseLabelSpec(emitted);
 
-    expect(spec).toMatchObject({ width: 40, height: 30 });
+    expect(spec).toMatchObject({ width: 25, height: 15 });
     expect(spec.items).toHaveLength(3);
     expect(spec.items[0]).toMatchObject({ type: "qrcode", text: emitted.items[0].text });
-    expect(spec.items[1]).toMatchObject({ type: "text", text: "000-042", bold: true, fontHeight: 3.4 });
+    expect(spec.items[1]).toMatchObject({ type: "text", text: "000-042", bold: true, fontHeight: 2.8 });
   });
 
   // Wrapping is resolved server-side into one item per line, so the printer must
@@ -208,21 +208,21 @@ describe("the bundled label service", () => {
     }
   });
 
-  // A cable flag is a 30x45mm label printed sideways, so the canvas arrives with
+  // A cable flag is a 25x38mm label printed sideways, so the canvas arrives with
   // the sides swapped and a rotation the printer has to apply. The fold that
   // splits the two faces is drawn on the preview only, never sent to print.
   it("carries the rotation of a sideways label and no fold line", () => {
     const spec = parseLabelSpec({
-      width: 45,
-      height: 30,
+      width: 38,
+      height: 25,
       rotation: 90,
       items: [
-        { type: "qrcode", x: 1.5, y: 1.5, width: 12, height: 12, text: "https://homebox.example.com/item/abc" },
+        { type: "qrcode", x: 1, y: 1, width: 10.5, height: 10.5, text: "https://homebox.example.com/item/abc" },
         {
           type: "text",
-          x: 14.7,
-          y: 1.5,
-          width: 28.8,
+          x: 12.7,
+          y: 1,
+          width: 24.3,
           height: 3.75,
           text: "SW1-P24",
           fontHeight: 3,

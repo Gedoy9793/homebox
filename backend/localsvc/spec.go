@@ -136,24 +136,26 @@ const (
 )
 
 var profiles = map[string]profile{
-	// A common 40x30mm thermal label.
+	// A 25x15mm thermal label. There is not much room on one: the title gets a
+	// line and the description whatever is left under it, so the type sizes are
+	// smaller than a bigger label would want.
 	profileStandard: {
 		name:      profileStandard,
-		widthMM:   40,
-		heightMM:  30,
-		paddingMM: 1.5,
-		titleMM:   3.4,
-		bodyMM:    2.4,
+		widthMM:   25,
+		heightMM:  15,
+		paddingMM: 1,
+		titleMM:   2.8,
+		bodyMM:    2,
 	},
-	// A cable flag: 30x45mm, folded in half across its width into two 15x45mm
+	// A cable flag: 25x38mm, folded in half across its width into two 12.5x38mm
 	// faces, so the same content is printed twice and stays readable from either
-	// side. Printed rotated, which turns each face into a 45x15mm strip — wide
+	// side. Printed rotated, which turns each face into a 38x12.5mm strip — wide
 	// enough for the QR code and the text to sit side by side.
 	profileCable: {
 		name:      profileCable,
-		widthMM:   30,
-		heightMM:  45,
-		paddingMM: 1.5,
+		widthMM:   25,
+		heightMM:  38,
+		paddingMM: 1,
 		rotation:  90,
 		titleMM:   3,
 		bodyMM:    2.2,
