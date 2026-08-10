@@ -24,6 +24,11 @@ const (
 
 	maxTitleLines = 2
 
+	// maxSubtitleLines caps the name printed under the asset ID. A second line is
+	// usually a truncated fragment anyway, and on a 25x15mm label that room is
+	// better spent on the description.
+	maxSubtitleLines = 1
+
 	// qrWidthShare caps how much of the label width the QR code may take. Fitting
 	// it to the full height instead leaves the text a column too narrow to break
 	// sensibly, and wastes the space under the code.
@@ -33,6 +38,21 @@ const (
 	// the line never reaches the label itself.
 	foldLineWidthMM = 0.2
 )
+
+// headline splits the identifying text into the bold line and the smaller one
+// under it.
+//
+// The asset ID leads when there is one: it is the number written on a shelf list
+// and read back off the label, so it earns the large type, with the name below it
+// for humans. Without an asset ID the name leads, which is how labels looked
+// before the ID was available here.
+func headline(req labelRequest) (primary string, secondary string) {
+	if req.assetID != "" && req.assetID != req.title {
+		return req.assetID, req.title
+	}
+
+	return req.title, ""
+}
 
 // labelRequest is the label content. The text comes from Homebox's labelmaker;
 // assetID is looked up from the record the URL points at, because labelmaker
@@ -110,12 +130,20 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Fac
 	}
 	textWidth := prof.widthMM - textX - prof.paddingMM
 
-	titleLines := wrapText(req.title, titleFace, textWidth, maxTitleLines)
-	cursor := appendLines(&items, titleLines, textX, prof.paddingMM, textWidth, prof.titleMM, true)
+	bodyLineHeight := prof.bodyMM * lineSpacing
+	primary, secondary := headline(req)
 
-	bodyLines := wrapText(req.description, bodyFace, textWidth,
-		int((prof.heightMM-prof.paddingMM-cursor)/(prof.bodyMM*lineSpacing)))
-	appendLines(&items, bodyLines, textX, cursor, textWidth, prof.bodyMM, false)
+	cursor := appendLines(&items, wrapText(primary, titleFace, textWidth, maxTitleLines),
+		textX, prof.paddingMM, textWidth, prof.titleMM, true)
+
+	if secondary != "" {
+		cursor = appendLines(&items, wrapText(secondary, bodyFace, textWidth, maxSubtitleLines),
+			textX, cursor, textWidth, prof.bodyMM, false)
+	}
+
+	remaining := prof.heightMM - prof.paddingMM - cursor
+	appendLines(&items, wrapText(req.description, bodyFace, textWidth, int(remaining/bodyLineHeight)),
+		textX, cursor, textWidth, prof.bodyMM, false)
 
 	return items
 }
@@ -170,17 +198,14 @@ func layoutFlag(req labelRequest, prof profile, titleFace, bodyFace font.Face) [
 	}
 	textWidth := prof.widthMM - textX - prof.paddingMM
 
-	titleLines := wrapText(req.title, titleFace, textWidth, maxTitleLines)
-	titleHeight := float64(len(titleLines)) * prof.titleMM * lineSpacing
+	primary, secondary := headline(req)
 
-	cursor := appendLines(&items, titleLines, textX, prof.paddingMM, textWidth, prof.titleMM, true)
+	cursor := appendLines(&items, wrapText(primary, titleFace, textWidth, maxTitleLines),
+		textX, prof.paddingMM, textWidth, prof.titleMM, true)
 
-	// The asset ID is the number written on the shelf list, so it belongs next to
-	// the name. Skipped when the title already is the asset ID, which is what an
-	// asset label's title holds.
-	if req.assetID != "" && req.assetID != req.title {
-		remaining := faceHeight - 2*prof.paddingMM - titleHeight
-		appendLines(&items, wrapText(req.assetID, bodyFace, textWidth, int(remaining/bodyLineHeight)),
+	if secondary != "" {
+		remaining := faceHeight - prof.paddingMM - cursor
+		appendLines(&items, wrapText(secondary, bodyFace, textWidth, min(maxSubtitleLines, int(remaining/bodyLineHeight))),
 			textX, cursor, textWidth, prof.bodyMM, false)
 	}
 

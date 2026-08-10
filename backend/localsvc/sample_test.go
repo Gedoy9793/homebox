@@ -16,8 +16,9 @@ func TestGenerateSampleLabels(t *testing.T) {
 	}{
 		"standard": {
 			request: labelRequest{
-				title:       "000-042",
-				description: "Netgear GS308 switch\nLocation: Rack 3 / Shelf 2",
+				title:       "Netgear GS308 switch",
+				description: "Location: Rack 3 / Shelf 2",
+				assetID:     testAssetID,
 				url:         "https://homebox.example.com/a/000-042",
 			},
 			prof: profiles[profileStandard],
@@ -26,7 +27,7 @@ func TestGenerateSampleLabels(t *testing.T) {
 			request: labelRequest{
 				title:       testCableID,
 				description: "Office AP uplink from the patch panel in rack 3",
-				assetID:     "000-042",
+				assetID:     testAssetID,
 				url:         "https://homebox.example.com/item/abc",
 			},
 			prof: profiles[profileCable],

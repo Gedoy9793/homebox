@@ -17,8 +17,9 @@ import (
 
 // Stand-ins for what Homebox puts in the label title.
 const (
-	testAssetID = "000-042"
-	testCableID = "SW1-P24"
+	testAssetID  = "000-042"
+	testCableID  = "SW1-P24"
+	testItemName = "Netgear switch"
 )
 
 // embeddedSpec pulls the layout back out of a rendered label, the same way the
@@ -158,6 +159,78 @@ func TestRenderLabelPreviewMatchesLabelSize(t *testing.T) {
 
 	if _, ok := decoded.(*image.Gray); !ok {
 		t.Fatalf("expected a greyscale preview, got %T", decoded)
+	}
+}
+
+// The asset ID is what gets read off the label and typed back in, so it takes the
+// bold line and the name moves under it. Without an asset ID the name keeps the
+// bold line, which is how labels looked before the ID could be resolved here.
+func TestHeadlineLeadsWithTheAssetID(t *testing.T) {
+	cases := map[string]struct {
+		request            labelRequest
+		primary, secondary string
+	}{
+		"asset id and name": {
+			request:   labelRequest{title: testItemName, assetID: testAssetID},
+			primary:   testAssetID,
+			secondary: testItemName,
+		},
+		"name only": {
+			request: labelRequest{title: testItemName},
+			primary: testItemName,
+		},
+		// An asset label's title already is the asset ID; printing it twice would
+		// waste the one line the small stock has.
+		"title is the asset id": {
+			request: labelRequest{title: testAssetID, assetID: testAssetID},
+			primary: testAssetID,
+		},
+	}
+
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			primary, secondary := headline(testCase.request)
+			if primary != testCase.primary || secondary != testCase.secondary {
+				t.Fatalf("expected %q/%q, got %q/%q", testCase.primary, testCase.secondary, primary, secondary)
+			}
+		})
+	}
+}
+
+// Both stocks follow the same rule, so a label is read the same way whichever one
+// it is printed on.
+func TestBothProfilesLeadWithTheAssetID(t *testing.T) {
+	request := labelRequest{
+		title:       testItemName,
+		description: "Rack 3",
+		assetID:     testAssetID,
+		url:         "https://example.com/a/000-042",
+	}
+
+	for _, name := range []string{profileStandard, profileCable} {
+		t.Run(name, func(t *testing.T) {
+			spec, err := buildSpec(request, profiles[name])
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			texts := itemsOfType(spec, itemText)
+			if len(texts) < 2 {
+				t.Fatalf("expected a headline and a subtitle, got %d text items", len(texts))
+			}
+
+			if texts[0].Text != testAssetID || !texts[0].Bold {
+				t.Errorf("expected the asset ID in bold first, got %+v", texts[0])
+			}
+			// The name may be wrapped, so only its first line lands in this item.
+			if !strings.HasPrefix(request.title, texts[1].Text) || texts[1].Bold {
+				t.Errorf("expected the name underneath in regular type, got %+v", texts[1])
+			}
+			if texts[1].FontHeight >= texts[0].FontHeight {
+				t.Errorf("expected the name to be smaller than the asset ID, got %g and %g",
+					texts[1].FontHeight, texts[0].FontHeight)
+			}
+		})
 	}
 }
 
