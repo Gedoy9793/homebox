@@ -183,6 +183,7 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerF
 	fullWidth := prof.widthMM - 2*prof.paddingMM
 	bodyLineHeight := prof.bodyMM * lineSpacing
 	footerLineHeight := footerMM * lineSpacing
+	gap := contentGap(prof)
 
 	footerLines := wrapText(req.footer, footerFace, fullWidth, maxFooterLines)
 	footerHeight := float64(len(footerLines)) * footerLineHeight
@@ -193,13 +194,13 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerF
 		// usual width share so the text column beside it stays usable.
 		maxQR := prof.heightMM - 2*prof.paddingMM
 		if footerHeight > 0 {
-			maxQR -= footerHeight + gapMM
+			maxQR -= footerHeight + gap
 		}
 		qrSize = prof.qrMM
 		if qrSize <= 0 {
 			qrSize = maxQR
 		}
-		qrSize = min(qrSize, maxQR, prof.widthMM*qrWidthShare)
+		qrSize = min(qrSize, maxQR, prof.widthMM*qrWidthCap(prof))
 
 		items = append(items, labelItem{
 			Type:   itemQRCode,
@@ -213,7 +214,7 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerF
 
 	footerTop := prof.paddingMM + qrSize
 	if qrSize > 0 && footerHeight > 0 {
-		footerTop += gapMM
+		footerTop += gap
 	}
 	if qrSize == 0 {
 		// No code: keep the path on the bottom edge so a text-only label still
@@ -223,7 +224,7 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerF
 
 	textX := prof.paddingMM
 	if qrSize > 0 {
-		textX += qrSize + gapMM
+		textX += qrSize + gap
 	}
 	textWidth := prof.widthMM - textX - prof.paddingMM
 
@@ -231,6 +232,12 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerF
 
 	cursor := appendLines(&items, wrapText(primary, titleFace, textWidth, maxTitleLines),
 		textX, prof.paddingMM, textWidth, prof.titleMM, true)
+
+	// On the large location stock, leave a little air under the title before the
+	// asset ID and description so the headline does not crowd them.
+	if prof.name == profileLocation && (secondary != "" || req.detail != "" || len(req.tags) > 0) {
+		cursor += gap * 0.4
+	}
 
 	if secondary != "" {
 		cursor = appendLines(&items, wrapText(secondary, bodyFace, textWidth, maxSubtitleLines),

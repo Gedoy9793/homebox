@@ -112,12 +112,20 @@ type profile struct {
 	heightMM  float64
 	paddingMM float64
 
+	// gapMM separates the QR code from the text column and from the footer path.
+	// Zero falls back to the shared default used by the small item and cable stock.
+	gapMM float64
+
 	// rotation turns the content relative to the label. 90 lets a tall, narrow
 	// label be laid out — and read — lengthwise.
 	rotation int
 
 	// qrMM is the QR code edge length. Zero fits it to the label height.
 	qrMM float64
+
+	// qrShare caps how much of the label width the QR code may take. Zero falls
+	// back to the shared default used by item and cable stock.
+	qrShare float64
 
 	titleMM float64
 	bodyMM  float64
@@ -155,16 +163,18 @@ var profiles = map[string]profile{
 	},
 	// A 70x50mm label for a location. Bigger than an item's, because a location
 	// label is read from across the room and carries the path down to it as well
-	// as its own description. The path sits a step below the title size so a long
-	// chain can wrap onto a second line under the QR code.
+	// as its own description. Margins and gaps are looser than item stock, and the
+	// title is large enough to read from across a shelf.
 	profileLocation: {
 		name:      profileLocation,
 		widthMM:   70,
 		heightMM:  50,
-		paddingMM: 2,
-		titleMM:   5,
-		bodyMM:    3,
-		footerMM:  4,
+		paddingMM: 3.5,
+		gapMM:     2.5,
+		qrShare:   0.48,
+		titleMM:   7,
+		bodyMM:    3.8,
+		footerMM:  5.2,
 	},
 	// A cable flag: 25x38mm, folded in half across its width into two 12.5x38mm
 	// faces, so the same content is printed twice and stays readable from either
@@ -209,6 +219,22 @@ func footerSize(prof profile) float64 {
 		return prof.footerMM
 	}
 	return prof.bodyMM
+}
+
+// contentGap is the space between the QR code and neighbouring text blocks.
+func contentGap(prof profile) float64 {
+	if prof.gapMM > 0 {
+		return prof.gapMM
+	}
+	return gapMM
+}
+
+// qrWidthCap is the fraction of label width the QR code may occupy.
+func qrWidthCap(prof profile) float64 {
+	if prof.qrShare > 0 {
+		return prof.qrShare
+	}
+	return qrWidthShare
 }
 
 // parseSize reads a "WxH" millimetre size. Anything unparseable is ignored so a

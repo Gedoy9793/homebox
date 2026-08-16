@@ -780,7 +780,8 @@ func TestLocationLabelSeparatesDescriptionFromPath(t *testing.T) {
 				t.Errorf("expected the path at the left margin, got x=%g", item.X)
 			}
 			codeBottom := codes[0].Y + codes[0].Height
-			if item.Y+0.01 < codeBottom || item.Y > codeBottom+gapMM+0.01 {
+			gap := contentGap(profiles[profileLocation])
+			if item.Y+0.01 < codeBottom || item.Y > codeBottom+gap+0.01 {
 				t.Errorf("expected the path just under the QR code, got y=%g (code ends at %g)", item.Y, codeBottom)
 			}
 			want := footerSize(profiles[profileLocation])
