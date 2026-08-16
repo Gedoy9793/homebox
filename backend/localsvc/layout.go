@@ -24,9 +24,8 @@ const (
 
 	maxTitleLines = 2
 
-	// maxSubtitleLines caps the name printed under the asset ID. A second line is
-	// usually a truncated fragment anyway, and on a 25x15mm label that room is
-	// better spent on the description.
+	// maxSubtitleLines caps the asset ID under the name. The ID is short, so one
+	// line is enough; on a 25x15mm label any leftover room goes to the description.
 	maxSubtitleLines = 1
 
 	// maxFooterLines caps the strip across the bottom. It holds one value — a
@@ -46,13 +45,12 @@ const (
 // headline splits the identifying text into the bold line and the smaller one
 // under it.
 //
-// The asset ID leads when there is one: it is the number written on a shelf list
-// and read back off the label, so it earns the large type, with the name below it
-// for humans. Without an asset ID the name leads, which is how labels looked
-// before the ID was available here.
+// The name (item or location) leads in large type so it can be read at a glance.
+// When there is a distinct asset ID it sits underneath in smaller type. If the
+// title already is the asset ID, it is printed once to avoid wasting a line.
 func headline(req labelRequest) (primary string, secondary string) {
 	if req.assetID != "" && req.assetID != req.title {
-		return req.assetID, req.title
+		return req.title, req.assetID
 	}
 
 	return req.title, ""
@@ -88,6 +86,17 @@ func buildSpec(req labelRequest, prof profile) (labelSpec, error) {
 	}
 	defer func() { _ = bodyFace.Close() }()
 
+	footerMM := footerSize(prof)
+	footerFace := bodyFace
+	if footerMM != prof.bodyMM {
+		parsed, err := newFace(set.regular, footerMM*measureScale)
+		if err != nil {
+			return labelSpec{}, err
+		}
+		defer func() { _ = parsed.Close() }()
+		footerFace = parsed
+	}
+
 	// Items are positioned on the canvas the printer draws on, which for a rotated
 	// label is the label with its sides swapped.
 	canvas := prof
@@ -100,28 +109,43 @@ func buildSpec(req labelRequest, prof profile) (labelSpec, error) {
 	if canvas.flag {
 		spec.Items = layoutFlag(req, canvas, titleFace, bodyFace)
 	} else {
-		spec.Items = layoutStandard(req, canvas, titleFace, bodyFace)
+		spec.Items = layoutStandard(req, canvas, titleFace, bodyFace, footerFace, footerMM)
 	}
 
 	return spec, nil
 }
 
 // layoutStandard puts the QR code top left, the headline and detail in the column
-// beside it, and the footer across the bottom of the label.
+// beside it, and the location path immediately under the QR code across the full
+// width. The path may wrap onto a second line; empty space, if any, falls below it
+// rather than between the code and the path.
 //
-// The footer is placed first because it is anchored to the bottom edge; the column
-// then gets everything above it. Whatever does not fit is dropped — a label is a
-// summary.
-func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Face) []labelItem {
+// Location stock prints the path a step below the title size; item stock keeps the
+// body size. Whatever does not fit in the column above the path is dropped — a
+// label is a summary.
+func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerFace font.Face, footerMM float64) []labelItem {
 	var items []labelItem
+
+	fullWidth := prof.widthMM - 2*prof.paddingMM
+	bodyLineHeight := prof.bodyMM * lineSpacing
+	footerLineHeight := footerMM * lineSpacing
+
+	footerLines := wrapText(req.footer, footerFace, fullWidth, maxFooterLines)
+	footerHeight := float64(len(footerLines)) * footerLineHeight
 
 	qrSize := 0.0
 	if req.url != "" {
+		// Leave room under the code for the path (and a small gap), then cap by the
+		// usual width share so the text column beside it stays usable.
+		maxQR := prof.heightMM - 2*prof.paddingMM
+		if footerHeight > 0 {
+			maxQR -= footerHeight + gapMM
+		}
 		qrSize = prof.qrMM
 		if qrSize <= 0 {
-			qrSize = prof.heightMM - 2*prof.paddingMM
+			qrSize = maxQR
 		}
-		qrSize = min(qrSize, prof.widthMM*qrWidthShare)
+		qrSize = min(qrSize, maxQR, prof.widthMM*qrWidthShare)
 
 		items = append(items, labelItem{
 			Type:   itemQRCode,
@@ -133,19 +157,21 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Fac
 		})
 	}
 
+	footerTop := prof.paddingMM + qrSize
+	if qrSize > 0 && footerHeight > 0 {
+		footerTop += gapMM
+	}
+	if qrSize == 0 {
+		// No code: keep the path on the bottom edge so a text-only label still
+		// has a stable place for it.
+		footerTop = prof.heightMM - prof.paddingMM - footerHeight
+	}
+
 	textX := prof.paddingMM
 	if qrSize > 0 {
 		textX += qrSize + gapMM
 	}
 	textWidth := prof.widthMM - textX - prof.paddingMM
-
-	bodyLineHeight := prof.bodyMM * lineSpacing
-	fullWidth := prof.widthMM - 2*prof.paddingMM
-
-	// The footer is measured up front: it sits on the bottom edge, and where its
-	// top lands decides how much height the column above has.
-	footerLines := wrapText(req.footer, bodyFace, fullWidth, maxFooterLines)
-	footerTop := prof.heightMM - prof.paddingMM - float64(len(footerLines))*bodyLineHeight
 
 	primary, secondary := headline(req)
 
@@ -158,11 +184,11 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Fac
 	}
 
 	// The column may run past the bottom of the QR code — it is to the right of it
-	// — but not into the footer.
+	// — but not into the path under the code.
 	appendLines(&items, wrapText(req.detail, bodyFace, textWidth, int((footerTop-cursor)/bodyLineHeight)),
 		textX, cursor, textWidth, prof.bodyMM, false)
 
-	appendLines(&items, footerLines, prof.paddingMM, footerTop, fullWidth, prof.bodyMM, false)
+	appendLines(&items, footerLines, prof.paddingMM, footerTop, fullWidth, footerMM, false)
 
 	return items
 }
@@ -170,7 +196,7 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace font.Fac
 // layoutFlag lays out a cable flag. The label is folded in half, so it has two
 // faces and one of them always points away from the reader.
 //
-// The first face identifies the thing: QR code, asset ID and name. The second
+// The first face identifies the thing: QR code, name and asset ID. The second
 // carries what it is for across the full width, where it has several times the
 // room of a column squeezed in beside the QR code — its own description, or where
 // it lives when it has none. Whichever way round the flag ends up folded, one

@@ -122,6 +122,11 @@ type profile struct {
 	titleMM float64
 	bodyMM  float64
 
+	// footerMM is the size used for the bottom strip (location path). Zero means
+	// use bodyMM. Location stock sets this a step below the title so a long path
+	// can wrap onto a second line without dominating the label.
+	footerMM float64
+
 	// flag lays the label out as a cable flag: the printed content is repeated
 	// on both halves so it stays readable once the tail is folded back on
 	// itself, with the fold marked in the middle.
@@ -150,7 +155,8 @@ var profiles = map[string]profile{
 	},
 	// A 60x40mm label for a location. Bigger than an item's, because a location
 	// label is read from across the room and carries the path down to it as well
-	// as its own description.
+	// as its own description. The path sits a step below the title size so a long
+	// chain can wrap onto a second line in the space under the QR code.
 	profileLocation: {
 		name:      profileLocation,
 		widthMM:   60,
@@ -158,6 +164,7 @@ var profiles = map[string]profile{
 		paddingMM: 2,
 		titleMM:   5,
 		bodyMM:    3,
+		footerMM:  4,
 	},
 	// A cable flag: 25x38mm, folded in half across its width into two 12.5x38mm
 	// faces, so the same content is printed twice and stays readable from either
@@ -194,6 +201,14 @@ func resolveProfile(requested string, size string) profile {
 	}
 
 	return selected
+}
+
+// footerSize is the millimetre height used for the bottom path strip.
+func footerSize(prof profile) float64 {
+	if prof.footerMM > 0 {
+		return prof.footerMM
+	}
+	return prof.bodyMM
 }
 
 // parseSize reads a "WxH" millimetre size. Anything unparseable is ignored so a

@@ -92,9 +92,8 @@ type entityRecord struct {
 	description string
 
 	// location is the name of the parent, and path the whole chain above this
-	// record from the top down. An item label only has room for the former; a
-	// location label has room for the latter, and needs it — "Shelf 2" on its own
-	// says nothing about which cupboard.
+	// record from the top down. Both location and item labels print the path when
+	// it is available — "Shelf 2" on its own says nothing about which cupboard.
 	location string
 	path     []string
 

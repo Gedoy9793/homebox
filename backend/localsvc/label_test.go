@@ -166,18 +166,18 @@ func TestRenderLabelPreviewMatchesLabelSize(t *testing.T) {
 	}
 }
 
-// The asset ID is what gets read off the label and typed back in, so it takes the
-// bold line and the name moves under it. Without an asset ID the name keeps the
-// bold line, which is how labels looked before the ID could be resolved here.
-func TestHeadlineLeadsWithTheAssetID(t *testing.T) {
+// The name is what you glance at on the shelf, so it takes the bold line; the
+// asset ID sits under it in smaller type. Without an asset ID — or when the title
+// already is the ID — the name keeps the bold line alone.
+func TestHeadlineLeadsWithTheName(t *testing.T) {
 	cases := map[string]struct {
 		request            labelRequest
 		primary, secondary string
 	}{
 		"asset id and name": {
 			request:   labelRequest{title: testItemName, assetID: testAssetID},
-			primary:   testAssetID,
-			secondary: testItemName,
+			primary:   testItemName,
+			secondary: testAssetID,
 		},
 		"name only": {
 			request: labelRequest{title: testItemName},
@@ -203,9 +203,9 @@ func TestHeadlineLeadsWithTheAssetID(t *testing.T) {
 
 // Both stocks follow the same rule, so a label is read the same way whichever one
 // it is printed on.
-func TestBothProfilesLeadWithTheAssetID(t *testing.T) {
+func TestBothProfilesLeadWithTheName(t *testing.T) {
 	request := labelRequest{
-		title:   testItemName,
+		title:   "Switch",
 		footer:  testLocationName,
 		assetID: testAssetID,
 		url:     "https://example.com/a/000-042",
@@ -223,15 +223,14 @@ func TestBothProfilesLeadWithTheAssetID(t *testing.T) {
 				t.Fatalf("expected a headline and a subtitle, got %d text items", len(texts))
 			}
 
-			if texts[0].Text != testAssetID || !texts[0].Bold {
-				t.Errorf("expected the asset ID in bold first, got %+v", texts[0])
+			if texts[0].Text != request.title || !texts[0].Bold {
+				t.Errorf("expected the name in bold first, got %+v", texts[0])
 			}
-			// The name may be wrapped, so only its first line lands in this item.
-			if !strings.HasPrefix(request.title, texts[1].Text) || texts[1].Bold {
-				t.Errorf("expected the name underneath in regular type, got %+v", texts[1])
+			if texts[1].Text != testAssetID || texts[1].Bold {
+				t.Errorf("expected the asset ID underneath in regular type, got %+v", texts[1])
 			}
 			if texts[1].FontHeight >= texts[0].FontHeight {
-				t.Errorf("expected the name to be smaller than the asset ID, got %g and %g",
+				t.Errorf("expected the asset ID to be smaller than the name, got %g and %g",
 					texts[1].FontHeight, texts[0].FontHeight)
 			}
 		})
@@ -261,7 +260,7 @@ func TestFooterRunsFullWidthUnderTheCode(t *testing.T) {
 
 	footer := 0
 	for _, item := range itemsOfType(spec, itemText) {
-		if item.Text == testAssetID || strings.HasPrefix(testItemName, item.Text) {
+		if item.Text == testAssetID || strings.Contains(testItemName, item.Text) {
 			continue
 		}
 
@@ -653,7 +652,7 @@ func TestLabelEndpointPrefersTheRecordOverTheRequestText(t *testing.T) {
 	}
 }
 
-// The footer is the path for a location and the parent's name for anything else.
+// The footer is the full path when one is known, otherwise the parent's name.
 func TestRecordFooter(t *testing.T) {
 	location := entityRecord{
 		name:        "Shelf 2",
@@ -667,7 +666,16 @@ func TestRecordFooter(t *testing.T) {
 		t.Fatalf("unexpected footer %q", got)
 	}
 
-	// An item gets the location it sits in instead.
+	// An item also gets the full path to where it sits.
+	item := entityRecord{
+		location: testLocationName,
+		path:     []string{"Garage", "Cupboard A", testLocationName},
+	}
+	if got := recordFooter(item); got != "Garage / Cupboard A / "+testLocationName {
+		t.Fatalf("unexpected footer %q", got)
+	}
+
+	// Without a path, fall back to the parent name alone.
 	if got := recordFooter(entityRecord{location: testLocationName}); got != testLocationName {
 		t.Fatalf("unexpected footer %q", got)
 	}
@@ -701,12 +709,17 @@ func TestLocationLabelSeparatesDescriptionFromPath(t *testing.T) {
 				t.Errorf("expected the description beside the QR code, got x=%g", item.X)
 			}
 		case strings.Contains(item.Text, "Garage"):
-			// Across the bottom, at the left margin.
+			// Across the label, immediately under the QR code.
 			if item.X > profiles[profileLocation].paddingMM+0.01 {
 				t.Errorf("expected the path at the left margin, got x=%g", item.X)
 			}
-			if item.Y+item.Height < spec.Height-profiles[profileLocation].paddingMM-0.01 {
-				t.Errorf("expected the path on the bottom edge, got y=%g", item.Y)
+			codeBottom := codes[0].Y + codes[0].Height
+			if item.Y+0.01 < codeBottom || item.Y > codeBottom+gapMM+0.01 {
+				t.Errorf("expected the path just under the QR code, got y=%g (code ends at %g)", item.Y, codeBottom)
+			}
+			want := footerSize(profiles[profileLocation])
+			if item.FontHeight < want-0.01 || item.FontHeight > want+0.01 {
+				t.Errorf("expected the path at %gmm, got %g", want, item.FontHeight)
 			}
 		}
 	}
@@ -728,6 +741,56 @@ func TestLocationLabelSeparatesDescriptionFromPath(t *testing.T) {
 	}
 	if strings.Contains(joined, "Homebox") {
 		t.Errorf("expected the placeholder to be gone, got %q", joined)
+	}
+}
+
+// Item labels also print the full location path, but keep the smaller body size so
+// it still fits the 25x15mm stock.
+func TestItemLabelPathUsesBodySize(t *testing.T) {
+	spec, err := buildSpec(labelRequest{
+		title:   "Switch",
+		footer:  "Garage / Cupboard A / Rack 3",
+		assetID: testAssetID,
+		url:     "https://example.com/a/000-042",
+	}, profiles[profileStandard])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	found := false
+	for _, item := range itemsOfType(spec, itemText) {
+		if !strings.Contains(item.Text, "Garage") {
+			continue
+		}
+		found = true
+		if item.FontHeight > profiles[profileStandard].bodyMM+0.01 {
+			t.Errorf("expected the item path in the body size, got %g", item.FontHeight)
+		}
+	}
+	if !found {
+		t.Fatal("expected the location path on the item label")
+	}
+}
+
+// A long location path wraps onto a second footer line at the dedicated footer size.
+func TestLocationPathWrapsOntoSecondLine(t *testing.T) {
+	spec, err := buildSpec(labelRequest{
+		title:  "Shelf 2",
+		footer: "Garage / Cupboard A / Left wall / Top shelf / Spare parts bin",
+		url:    "https://homebox.example.com/location/abc",
+	}, profiles[profileLocation])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var pathLines []labelItem
+	for _, item := range itemsOfType(spec, itemText) {
+		if item.FontHeight == footerSize(profiles[profileLocation]) {
+			pathLines = append(pathLines, item)
+		}
+	}
+	if len(pathLines) < 2 {
+		t.Fatalf("expected the path to wrap onto two lines, got %d", len(pathLines))
 	}
 }
 

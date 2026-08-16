@@ -76,13 +76,12 @@ func handleLabel(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// recordFooter is the strip across the bottom of the label.
-//
-// For a location it is the whole path down to it: "Shelf 2" on its own does not
-// say which cupboard. For anything else it is the location it sits in, which is
-// what you want the label to tell you when the thing is not where you expected.
+// recordFooter is the strip across the bottom of the label: the full location
+// path when one is known ("Garage / Cupboard A / Shelf 2"), otherwise just the
+// parent name. Location and item labels both print the path; only the stock size
+// differs.
 func recordFooter(record entityRecord) string {
-	if record.isLocation {
+	if len(record.path) > 0 {
 		return strings.Join(record.path, " / ")
 	}
 

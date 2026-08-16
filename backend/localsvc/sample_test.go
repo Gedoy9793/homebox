@@ -37,7 +37,7 @@ func TestGenerateSampleLabels(t *testing.T) {
 			request: labelRequest{
 				title:   "第二层",
 				detail:  "备件与耗材",
-				footer:  "车库 / 货架 A",
+				footer:  "一楼 / 车库 / 货架 A / 左侧 / 第二层",
 				assetID: "000-007",
 				url:     "https://homebox.example.com/location/abc",
 			},
