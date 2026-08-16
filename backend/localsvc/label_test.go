@@ -201,8 +201,8 @@ func TestHeadlineLeadsWithTheName(t *testing.T) {
 	}
 }
 
-// Both stocks follow the same rule, so a label is read the same way whichever one
-// it is printed on.
+// Both stocks that share the standard column layout lead with the name. Cable
+// flags put the asset ID on the back face instead, so they are checked separately.
 func TestBothProfilesLeadWithTheName(t *testing.T) {
 	request := labelRequest{
 		title:   "Switch",
@@ -211,7 +211,7 @@ func TestBothProfilesLeadWithTheName(t *testing.T) {
 		url:     "https://example.com/a/000-042",
 	}
 
-	for _, name := range []string{profileStandard, profileCable} {
+	for _, name := range []string{profileStandard} {
 		t.Run(name, func(t *testing.T) {
 			spec, err := buildSpec(request, profiles[name])
 			if err != nil {
@@ -310,6 +310,7 @@ func cableSpec(t *testing.T) labelSpec {
 		title:   testCableID,
 		detail:  "Office AP uplink from the patch panel in rack 3",
 		assetID: testAssetID,
+		tags:    []string{"uplink", "office"},
 		url:     "https://example.com/item/x",
 	}, profiles[profileCable])
 	if err != nil {
@@ -333,25 +334,32 @@ func TestCableProfileIsARotatedCanvas(t *testing.T) {
 	}
 }
 
-// The first face is the one that identifies the thing: QR code, name, asset ID.
-func TestCableFirstFaceCarriesTheIdentity(t *testing.T) {
+// The first face identifies the cable: QR code, name and tags. The asset ID
+// belongs on the back with the description.
+func TestCableFirstFaceCarriesTheNameAndTags(t *testing.T) {
 	spec := cableSpec(t)
 	foldY := spec.Height / 2
 
-	for _, want := range []string{testCableID, testAssetID} {
-		found := 0
-		for _, item := range itemsOfType(spec, itemText) {
-			if item.Text != want {
-				continue
-			}
-			found++
-			if item.Y >= foldY {
-				t.Errorf("expected %q on the first face, got y=%g", want, item.Y)
-			}
+	foundName := 0
+	foundTag := 0
+	for _, item := range itemsOfType(spec, itemText) {
+		if item.Y >= foldY {
+			continue
 		}
-		if found != 1 {
-			t.Errorf("expected %q exactly once, got %d", want, found)
+		switch {
+		case item.Text == testCableID:
+			foundName++
+		case strings.Contains(item.Text, "uplink") || strings.Contains(item.Text, "office"):
+			foundTag++
+		case item.Text == testAssetID:
+			t.Errorf("expected the asset ID on the second face, got it at y=%g", item.Y)
 		}
+	}
+	if foundName != 1 {
+		t.Errorf("expected the name on the first face once, got %d", foundName)
+	}
+	if foundTag == 0 {
+		t.Error("expected tags on the first face")
 	}
 
 	codes := itemsOfType(spec, itemQRCode)
@@ -363,29 +371,87 @@ func TestCableFirstFaceCarriesTheIdentity(t *testing.T) {
 	}
 }
 
-// The description belongs only to the second face, across the full width. On the
-// first face it would have to share a narrow column with the name.
-func TestCableSecondFaceCarriesTheDescription(t *testing.T) {
+// Cable front faces may use up to three tag lines when the joined tags wrap.
+func TestCableFirstFaceAllowsThreeTagLines(t *testing.T) {
+	spec, err := buildSpec(labelRequest{
+		title:   testCableID,
+		assetID: testAssetID,
+		tags: []string{
+			"uplink-primary",
+			"office-floor-2",
+			"rack-a-patch",
+			"poe-injector",
+			"trunk-fiber",
+			"spare-cold",
+		},
+		url: "https://example.com/item/x",
+	}, profiles[profileCable])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	foldY := spec.Height / 2
+	tagLines := 0
+	for _, item := range itemsOfType(spec, itemText) {
+		if item.Y >= foldY || item.Text == testCableID {
+			continue
+		}
+		tagLines++
+	}
+	if tagLines != maxCableTagLines {
+		t.Fatalf("expected %d tag lines on the first face, got %d", maxCableTagLines, tagLines)
+	}
+}
+
+// The second face carries the asset ID and the description across the full width.
+func TestCableSecondFaceCarriesTheIDAndDescription(t *testing.T) {
 	spec := cableSpec(t)
 	foldY := spec.Height / 2
 
-	lines := 0
+	foundID := false
+	foundDesc := false
 	for _, item := range itemsOfType(spec, itemText) {
-		if item.Text == testCableID || item.Text == testAssetID {
+		if item.Y < foldY {
 			continue
 		}
-
-		lines++
-		if item.Y < foldY {
-			t.Errorf("expected no description on the first face, got %q", item.Text)
+		if item.Text == testAssetID {
+			foundID = true
+		}
+		if strings.Contains(item.Text, "Office") || strings.Contains(item.Text, "patch") {
+			foundDesc = true
 		}
 		if item.Width <= spec.Width/2 {
 			t.Errorf("expected the second face to use the full width, got %g", item.Width)
 		}
 	}
 
-	if lines == 0 {
-		t.Fatal("expected the description on the second face")
+	if !foundID {
+		t.Error("expected the asset ID on the second face")
+	}
+	if !foundDesc {
+		t.Error("expected the description on the second face")
+	}
+}
+
+// Item labels print tags in the column under the asset ID.
+func TestItemLabelIncludesTags(t *testing.T) {
+	spec, err := buildSpec(labelRequest{
+		title:   "Switch",
+		footer:  "Rack 3",
+		assetID: testAssetID,
+		tags:    []string{"network", "core"},
+		url:     "https://example.com/a/000-042",
+	}, profiles[profileStandard])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	joined := ""
+	for _, item := range itemsOfType(spec, itemText) {
+		joined += item.Text + " "
+	}
+	if !strings.Contains(joined, "network") {
+		t.Fatalf("expected tags on the item label, got %q", joined)
 	}
 }
 
@@ -724,8 +790,8 @@ func TestLocationLabelSeparatesDescriptionFromPath(t *testing.T) {
 		}
 	}
 
-	if spec.Width != 60 || spec.Height != 40 {
-		t.Fatalf("expected a 60x40mm label, got %gx%g", spec.Width, spec.Height)
+	if spec.Width != 70 || spec.Height != 50 {
+		t.Fatalf("expected a 70x50mm label, got %gx%g", spec.Width, spec.Height)
 	}
 
 	var text []string

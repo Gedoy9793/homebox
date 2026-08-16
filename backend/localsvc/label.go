@@ -40,6 +40,7 @@ func handleLabel(w http.ResponseWriter, r *http.Request) {
 		request.assetID = record.assetID.String()
 		request.detail = record.description
 		request.footer = recordFooter(record)
+		request.tags = append([]string(nil), record.tags...)
 	} else {
 		// Fallback: the text labelmaker assembled. Its newlines are flattened
 		// because they join fields that a label reads better side by side.

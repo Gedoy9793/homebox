@@ -97,6 +97,10 @@ type entityRecord struct {
 	location string
 	path     []string
 
+	// tags are the tag names attached to the record, in the order returned by the
+	// database. Item and cable labels print them; location labels do not.
+	tags []string
+
 	assetID    repo.AssetID
 	isLocation bool
 }
@@ -118,7 +122,7 @@ func lookupEntity(ctx context.Context, labelURL string) entityRecord {
 	ctx, cancel := context.WithTimeout(ctx, typeLookupTimeout)
 	defer cancel()
 
-	found, err := client.Entity.Query().Where(match).WithEntityType().WithParent().Only(ctx)
+	found, err := client.Entity.Query().Where(match).WithEntityType().WithParent().WithTag().Only(ctx)
 	if err != nil {
 		// A label for a record that cannot be read is not worth failing over; the
 		// caller falls back to the text it was given.
@@ -139,6 +143,12 @@ func lookupEntity(ctx context.Context, labelURL string) entityRecord {
 	if found.Edges.Parent != nil {
 		record.location = found.Edges.Parent.Name
 		record.path = ancestry(ctx, found.Edges.Parent)
+	}
+	for _, tag := range found.Edges.Tag {
+		if tag == nil || tag.Name == "" {
+			continue
+		}
+		record.tags = append(record.tags, tag.Name)
 	}
 
 	return record

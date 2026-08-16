@@ -153,14 +153,14 @@ var profiles = map[string]profile{
 		titleMM:   2.8,
 		bodyMM:    2,
 	},
-	// A 60x40mm label for a location. Bigger than an item's, because a location
+	// A 70x50mm label for a location. Bigger than an item's, because a location
 	// label is read from across the room and carries the path down to it as well
 	// as its own description. The path sits a step below the title size so a long
-	// chain can wrap onto a second line in the space under the QR code.
+	// chain can wrap onto a second line under the QR code.
 	profileLocation: {
 		name:      profileLocation,
-		widthMM:   60,
-		heightMM:  40,
+		widthMM:   70,
+		heightMM:  50,
 		paddingMM: 2,
 		titleMM:   5,
 		bodyMM:    3,

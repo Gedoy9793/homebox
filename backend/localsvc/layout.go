@@ -32,6 +32,14 @@ const (
 	// location path, or where an item lives — so two lines is generous.
 	maxFooterLines = 2
 
+	// maxTagLines caps how many lines of tags fit on an item label. Tags are a
+	// secondary cue, so they should not crowd out the name on the small stock.
+	maxTagLines = 2
+
+	// maxCableTagLines is more generous: the cable front face has room beside
+	// the QR code for several short tag lines before the fold.
+	maxCableTagLines = 3
+
 	// qrWidthShare caps how much of the label width the QR code may take. Fitting
 	// it to the full height instead leaves the text a column too narrow to break
 	// sensibly, and wastes the space under the code.
@@ -60,14 +68,29 @@ func headline(req labelRequest) (primary string, secondary string) {
 // it came from.
 //
 // detail sits in the column beside the QR code, under the name. footer runs across
-// the bottom of the label, which is the only place wide enough for something that
-// reads as a sentence — a location path, or where an item lives.
+// the bottom of the label (or under the QR code), which is the only place wide
+// enough for something that reads as a sentence — a location path, or where an
+// item lives. tags are the tag names, joined for printing.
 type labelRequest struct {
 	title   string
 	assetID string
 	detail  string
 	footer  string
+	tags    []string
 	url     string
+}
+
+// formatTags joins tag names for a label line.
+func formatTags(tags []string) string {
+	cleaned := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		cleaned = append(cleaned, tag)
+	}
+	return strings.Join(cleaned, " / ")
 }
 
 // buildSpec turns the request into a positioned layout for the given stock.
@@ -107,12 +130,43 @@ func buildSpec(req labelRequest, prof profile) (labelSpec, error) {
 	spec := labelSpec{Width: canvas.widthMM, Height: canvas.heightMM, Rotation: prof.rotation}
 
 	if canvas.flag {
-		spec.Items = layoutFlag(req, canvas, titleFace, bodyFace)
+		tagMM := cableFrontTagMM(canvas)
+		tagFace := bodyFace
+		if tagMM != prof.bodyMM {
+			parsed, err := newFace(set.regular, tagMM*measureScale)
+			if err != nil {
+				return labelSpec{}, err
+			}
+			defer func() { _ = parsed.Close() }()
+			tagFace = parsed
+		}
+		spec.Items = layoutFlag(req, canvas, titleFace, bodyFace, tagFace, tagMM)
 	} else {
 		spec.Items = layoutStandard(req, canvas, titleFace, bodyFace, footerFace, footerMM)
 	}
 
 	return spec, nil
+}
+
+// cableFrontTagMM picks a tag size that fits maxCableTagLines under a one-line
+// name on the front face. The face is short (~12.5mm), so bodyMM alone is often
+// too tall for three tag lines.
+func cableFrontTagMM(prof profile) float64 {
+	usable := prof.heightMM/2 - 2*prof.paddingMM
+	remaining := usable - prof.titleMM*lineSpacing
+	if remaining <= 0 {
+		return prof.bodyMM
+	}
+
+	fitted := remaining / (float64(maxCableTagLines) * lineSpacing)
+	if fitted >= prof.bodyMM {
+		return prof.bodyMM
+	}
+	const minTagMM = 1.4
+	if fitted < minTagMM {
+		return minTagMM
+	}
+	return fitted
 }
 
 // layoutStandard puts the QR code top left, the headline and detail in the column
@@ -183,6 +237,12 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerF
 			textX, cursor, textWidth, prof.bodyMM, false)
 	}
 
+	if tagText := formatTags(req.tags); tagText != "" {
+		remaining := int((footerTop - cursor) / bodyLineHeight)
+		cursor = appendLines(&items, wrapText(tagText, bodyFace, textWidth, min(maxTagLines, remaining)),
+			textX, cursor, textWidth, prof.bodyMM, false)
+	}
+
 	// The column may run past the bottom of the QR code — it is to the right of it
 	// — but not into the path under the code.
 	appendLines(&items, wrapText(req.detail, bodyFace, textWidth, int((footerTop-cursor)/bodyLineHeight)),
@@ -196,17 +256,17 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerF
 // layoutFlag lays out a cable flag. The label is folded in half, so it has two
 // faces and one of them always points away from the reader.
 //
-// The first face identifies the thing: QR code, name and asset ID. The second
-// carries what it is for across the full width, where it has several times the
-// room of a column squeezed in beside the QR code — its own description, or where
-// it lives when it has none. Whichever way round the flag ends up folded, one
-// useful side faces out.
+// The first face identifies the cable at a glance: QR code, name and tags. The
+// second carries the asset ID and the description across the full width — room
+// the first face does not have beside the QR code. Whichever way round the flag
+// ends up folded, one useful side faces out.
 //
 // prof is the rotated canvas, so the fold that runs across the label's width is a
 // horizontal line here, splitting the canvas into two wide, short faces stacked
 // on top of each other.
-func layoutFlag(req labelRequest, prof profile, titleFace, bodyFace font.Face) []labelItem {
+func layoutFlag(req labelRequest, prof profile, titleFace, bodyFace, tagFace font.Face, tagMM float64) []labelItem {
 	faceHeight := prof.heightMM / 2
+	tagLineHeight := tagMM * lineSpacing
 	bodyLineHeight := prof.bodyMM * lineSpacing
 
 	items := []labelItem{{
@@ -243,23 +303,32 @@ func layoutFlag(req labelRequest, prof profile, titleFace, bodyFace font.Face) [
 	}
 	textWidth := prof.widthMM - textX - prof.paddingMM
 
-	primary, secondary := headline(req)
-
-	cursor := appendLines(&items, wrapText(primary, titleFace, textWidth, maxTitleLines),
+	// Front face: one-line name, then up to three tag lines. The asset ID moves
+	// to the back so the short face can spend its height on tags.
+	cursor := appendLines(&items, wrapText(req.title, titleFace, textWidth, 1),
 		textX, prof.paddingMM, textWidth, prof.titleMM, true)
 
-	if secondary != "" {
+	if tagText := formatTags(req.tags); tagText != "" {
 		remaining := faceHeight - prof.paddingMM - cursor
-		appendLines(&items, wrapText(secondary, bodyFace, textWidth, min(maxSubtitleLines, int(remaining/bodyLineHeight))),
-			textX, cursor, textWidth, prof.bodyMM, false)
+		appendLines(&items, wrapText(tagText, tagFace, textWidth, min(maxCableTagLines, int(remaining/tagLineHeight))),
+			textX, cursor, textWidth, tagMM, false)
 	}
 
-	// The second face: description only, across the full width.
+	// Back face: asset ID, then description (falling back to the location path).
 	fullWidth := prof.widthMM - 2*prof.paddingMM
-	appendLines(&items,
-		wrapText(firstNonEmptyString(req.detail, req.footer), bodyFace, fullWidth,
-			int((faceHeight-2*prof.paddingMM)/bodyLineHeight)),
-		prof.paddingMM, faceHeight+prof.paddingMM, fullWidth, prof.bodyMM, false)
+	backY := faceHeight + prof.paddingMM
+	backBottom := prof.heightMM - prof.paddingMM
+
+	if req.assetID != "" {
+		backY = appendLines(&items, wrapText(req.assetID, titleFace, fullWidth, 1),
+			prof.paddingMM, backY, fullWidth, prof.titleMM, true)
+	}
+
+	backText := firstNonEmptyString(req.detail, req.footer)
+	if backText != "" {
+		appendLines(&items, wrapText(backText, bodyFace, fullWidth, int((backBottom-backY)/bodyLineHeight)),
+			prof.paddingMM, backY, fullWidth, prof.bodyMM, false)
+	}
 
 	return items
 }
