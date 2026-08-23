@@ -141,6 +141,8 @@ func buildSpec(req labelRequest, prof profile) (labelSpec, error) {
 			tagFace = parsed
 		}
 		spec.Items = layoutFlag(req, canvas, titleFace, bodyFace, tagFace, tagMM)
+	} else if canvas.name == profileLocation {
+		spec.Items = layoutLocation(req, canvas, titleFace, bodyFace, footerFace, footerMM)
 	} else {
 		spec.Items = layoutStandard(req, canvas, titleFace, bodyFace, footerFace, footerMM)
 	}
@@ -174,9 +176,8 @@ func cableFrontTagMM(prof profile) float64 {
 // width. The path may wrap onto a second line; empty space, if any, falls below it
 // rather than between the code and the path.
 //
-// Location stock prints the path a step below the title size; item stock keeps the
-// body size. Whatever does not fit in the column above the path is dropped — a
-// label is a summary.
+// Item stock keeps the body size for the path. Whatever does not fit in the column
+// above the path is dropped — a label is a summary.
 func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerFace font.Face, footerMM float64) []labelItem {
 	var items []labelItem
 
@@ -233,12 +234,6 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerF
 	cursor := appendLines(&items, wrapText(primary, titleFace, textWidth, maxTitleLines),
 		textX, prof.paddingMM, textWidth, prof.titleMM, true)
 
-	// On the large location stock, leave a little air under the title before the
-	// asset ID and description so the headline does not crowd them.
-	if prof.name == profileLocation && (secondary != "" || req.detail != "" || len(req.tags) > 0) {
-		cursor += gap * 0.4
-	}
-
 	if secondary != "" {
 		cursor = appendLines(&items, wrapText(secondary, bodyFace, textWidth, maxSubtitleLines),
 			textX, cursor, textWidth, prof.bodyMM, false)
@@ -256,6 +251,90 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerF
 		textX, cursor, textWidth, prof.bodyMM, false)
 
 	appendLines(&items, footerLines, prof.paddingMM, footerTop, fullWidth, footerMM, false)
+
+	return items
+}
+
+// layoutLocation packs a location onto the same 25x15mm stock as an item label.
+//
+// The face is split left/right: QR code over the asset ID on the left, name over
+// the full ancestry path on the right. Description and tags are omitted so a long
+// path can still wrap in the right column.
+func layoutLocation(req labelRequest, prof profile, titleFace, bodyFace, footerFace font.Face, footerMM float64) []labelItem {
+	var items []labelItem
+
+	gap := contentGap(prof)
+	bodyLineHeight := prof.bodyMM * lineSpacing
+	footerLineHeight := footerMM * lineSpacing
+
+	idText := ""
+	if req.assetID != "" && req.assetID != req.title {
+		idText = req.assetID
+	}
+
+	idBlock := 0.0
+	if idText != "" {
+		idBlock = bodyLineHeight
+	}
+
+	qrSize := 0.0
+	if req.url != "" {
+		maxQR := prof.heightMM - 2*prof.paddingMM
+		if idBlock > 0 {
+			maxQR -= idBlock + gap*0.4
+		}
+		qrSize = prof.qrMM
+		if qrSize <= 0 {
+			qrSize = maxQR
+		}
+		qrSize = min(qrSize, maxQR, prof.widthMM*qrWidthCap(prof))
+
+		items = append(items, labelItem{
+			Type:   itemQRCode,
+			X:      prof.paddingMM,
+			Y:      prof.paddingMM,
+			Width:  qrSize,
+			Height: qrSize,
+			Text:   req.url,
+		})
+	}
+
+	leftWidth := qrSize
+	if leftWidth <= 0 {
+		// No code: give the asset ID a narrow left column so the path still owns
+		// most of the width on the right.
+		leftWidth = min(prof.widthMM*qrWidthCap(prof), prof.widthMM/2)
+	}
+
+	if idText != "" {
+		idY := prof.paddingMM + qrSize
+		if qrSize > 0 {
+			idY += gap * 0.4
+		}
+		appendLines(&items, wrapText(idText, bodyFace, leftWidth, 1),
+			prof.paddingMM, idY, leftWidth, prof.bodyMM, false)
+	}
+
+	textX := prof.paddingMM
+	if leftWidth > 0 {
+		textX += leftWidth + gap
+	}
+	textWidth := prof.widthMM - textX - prof.paddingMM
+	if textWidth <= 0 {
+		return items
+	}
+
+	primary, _ := headline(req)
+	cursor := appendLines(&items, wrapText(primary, titleFace, textWidth, maxTitleLines),
+		textX, prof.paddingMM, textWidth, prof.titleMM, true)
+
+	if req.footer != "" {
+		remaining := int((prof.heightMM - prof.paddingMM - cursor) / footerLineHeight)
+		if remaining > 0 {
+			appendLines(&items, wrapText(req.footer, footerFace, textWidth, remaining),
+				textX, cursor, textWidth, footerMM, false)
+		}
+	}
 
 	return items
 }

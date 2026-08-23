@@ -64,9 +64,9 @@ func TestProfileForTypeName(t *testing.T) {
 	}
 }
 
-// A location label carries the path down to it and its own description, which the
-// small stock has no room for.
-func TestProfileForRecordPicksTheLargeStockForLocations(t *testing.T) {
+// A location still gets its own profile even on the same 25x15mm stock, so the
+// layout can prioritise the path over description and tags.
+func TestProfileForRecordPicksLocationStock(t *testing.T) {
 	t.Setenv(EnvProfileMap, "")
 
 	if got := profileForRecord(entityRecord{typeName: "Shelf", isLocation: true}); got != profileLocation {

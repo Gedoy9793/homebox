@@ -728,7 +728,7 @@ func TestRecordFooter(t *testing.T) {
 		isLocation:  true,
 	}
 
-	if got := recordFooter(location); got != "Garage / Cupboard A" {
+	if got := recordFooter(location); got != "Garage / Cupboard A / Shelf 2" {
 		t.Fatalf("unexpected footer %q", got)
 	}
 
@@ -747,10 +747,9 @@ func TestRecordFooter(t *testing.T) {
 	}
 }
 
-// On a location label the description sits under the name and the path runs along
-// the bottom. Homebox's "Homebox Location" placeholder never appears, because none
-// of this comes from the text it sends.
-func TestLocationLabelSeparatesDescriptionFromPath(t *testing.T) {
+// A location label on 25x15mm stock is split left/right: QR over asset ID, name
+// over the full path. Description is omitted so the path keeps the room it needs.
+func TestLocationLabelShowsNameIDAndPath(t *testing.T) {
 	spec, err := buildSpec(labelRequest{
 		title:   "Shelf 2",
 		detail:  "Spare parts",
@@ -762,45 +761,57 @@ func TestLocationLabelSeparatesDescriptionFromPath(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	if spec.Width != 25 || spec.Height != 15 {
+		t.Fatalf("expected a 25x15mm label, got %gx%g", spec.Width, spec.Height)
+	}
+
 	codes := itemsOfType(spec, itemQRCode)
 	if len(codes) != 1 {
 		t.Fatalf("expected one QR code, got %d", len(codes))
 	}
+	code := codes[0]
+	codeRight := code.X + code.Width
+	codeBottom := code.Y + code.Height
 
+	var text []string
+	foundID := false
+	foundPath := false
 	for _, item := range itemsOfType(spec, itemText) {
+		text = append(text, item.Text)
 		switch {
 		case item.Text == "Spare parts":
-			// Beside the QR code, in the column with the name.
-			if item.X <= codes[0].X+codes[0].Width {
-				t.Errorf("expected the description beside the QR code, got x=%g", item.X)
+			t.Errorf("expected the description to be omitted on a location label, got %q", item.Text)
+		case item.Text == testAssetID:
+			foundID = true
+			if item.X > code.X+0.01 {
+				t.Errorf("expected the asset ID in the left column, got x=%g", item.X)
+			}
+			if item.Y+0.01 < codeBottom {
+				t.Errorf("expected the asset ID under the QR code, got y=%g (code ends at %g)", item.Y, codeBottom)
 			}
 		case strings.Contains(item.Text, "Garage"):
-			// Across the label, immediately under the QR code.
-			if item.X > profiles[profileLocation].paddingMM+0.01 {
-				t.Errorf("expected the path at the left margin, got x=%g", item.X)
-			}
-			codeBottom := codes[0].Y + codes[0].Height
-			gap := contentGap(profiles[profileLocation])
-			if item.Y+0.01 < codeBottom || item.Y > codeBottom+gap+0.01 {
-				t.Errorf("expected the path just under the QR code, got y=%g (code ends at %g)", item.Y, codeBottom)
+			foundPath = true
+			if item.X+0.01 < codeRight {
+				t.Errorf("expected the path in the right column, got x=%g (code ends at %g)", item.X, codeRight)
 			}
 			want := footerSize(profiles[profileLocation])
 			if item.FontHeight < want-0.01 || item.FontHeight > want+0.01 {
 				t.Errorf("expected the path at %gmm, got %g", want, item.FontHeight)
 			}
+		case item.Text == "Shelf 2":
+			if item.X+0.01 < codeRight {
+				t.Errorf("expected the name in the right column, got x=%g", item.X)
+			}
 		}
 	}
-
-	if spec.Width != 70 || spec.Height != 50 {
-		t.Fatalf("expected a 70x50mm label, got %gx%g", spec.Width, spec.Height)
+	if !foundID {
+		t.Error("expected the asset ID under the QR code")
+	}
+	if !foundPath {
+		t.Error("expected the path in the right column")
 	}
 
-	var text []string
-	for _, item := range itemsOfType(spec, itemText) {
-		text = append(text, item.Text)
-	}
 	joined := strings.Join(text, " ")
-
 	for _, want := range []string{testAssetID, "Shelf 2", "Garage"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("expected %q on the label, got %q", want, joined)
@@ -839,7 +850,7 @@ func TestItemLabelPathUsesBodySize(t *testing.T) {
 	}
 }
 
-// A long location path wraps onto a second footer line at the dedicated footer size.
+// A long location path wraps in the right column at the dedicated footer size.
 func TestLocationPathWrapsOntoSecondLine(t *testing.T) {
 	spec, err := buildSpec(labelRequest{
 		title:  "Shelf 2",
@@ -850,11 +861,21 @@ func TestLocationPathWrapsOntoSecondLine(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	codes := itemsOfType(spec, itemQRCode)
+	if len(codes) != 1 {
+		t.Fatalf("expected one QR code, got %d", len(codes))
+	}
+	codeRight := codes[0].X + codes[0].Width
+
 	var pathLines []labelItem
 	for _, item := range itemsOfType(spec, itemText) {
-		if item.FontHeight == footerSize(profiles[profileLocation]) {
-			pathLines = append(pathLines, item)
+		if item.FontHeight != footerSize(profiles[profileLocation]) {
+			continue
 		}
+		if item.X+0.01 < codeRight {
+			t.Errorf("expected path lines in the right column, got x=%g", item.X)
+		}
+		pathLines = append(pathLines, item)
 	}
 	if len(pathLines) < 2 {
 		t.Fatalf("expected the path to wrap onto two lines, got %d", len(pathLines))

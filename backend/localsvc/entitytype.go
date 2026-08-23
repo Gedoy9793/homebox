@@ -71,8 +71,8 @@ func profileForRecord(record entityRecord) string {
 		}
 	}
 
-	// A location label carries a path and a description, which want more room than
-	// the small stock has.
+	// A location still gets its own profile so the layout can drop description and
+	// tags and spend the 25x15mm face on the path instead.
 	if record.isLocation {
 		return profileLocation
 	}

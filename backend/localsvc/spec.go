@@ -161,20 +161,19 @@ var profiles = map[string]profile{
 		titleMM:   2.8,
 		bodyMM:    2,
 	},
-	// A 70x50mm label for a location. Bigger than an item's, because a location
-	// label is read from across the room and carries the path down to it as well
-	// as its own description. Margins and gaps are looser than item stock, and the
-	// title is large enough to read from across a shelf.
+	// A 25x15mm location label on the same stock as item labels. Split left/right:
+	// QR above the asset ID on the left, name above the full path on the right.
+	// Description and tags are left off so the path can stay readable.
 	profileLocation: {
 		name:      profileLocation,
-		widthMM:   70,
-		heightMM:  50,
-		paddingMM: 3.5,
-		gapMM:     2.5,
-		qrShare:   0.48,
-		titleMM:   7,
-		bodyMM:    3.8,
-		footerMM:  5.2,
+		widthMM:   25,
+		heightMM:  15,
+		paddingMM: 1,
+		gapMM:     1,
+		qrShare:   0.42,
+		titleMM:   2.8,
+		bodyMM:    1.8,
+		footerMM:  1.7,
 	},
 	// A cable flag: 25x38mm, folded in half across its width into two 12.5x38mm
 	// faces, so the same content is printed twice and stays readable from either

@@ -55,7 +55,7 @@ func handleLabel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// An explicit request wins; otherwise the record decides, so a cable gets a
-	// flag, a location the large stock, and everything else the default.
+	// flag, a location its own 25x15 layout, and everything else the default.
 	requested := query.Get("LabelProfile")
 	if requested == "" {
 		requested = profileForRecord(record)
@@ -79,11 +79,15 @@ func handleLabel(w http.ResponseWriter, r *http.Request) {
 
 // recordFooter is the strip across the bottom of the label: the full location
 // path when one is known ("Garage / Cupboard A / Shelf 2"), otherwise just the
-// parent name. Location and item labels both print the path; only the stock size
-// differs.
+// parent name. Location labels append their own name so the path reads as the
+// complete chain down to this shelf.
 func recordFooter(record entityRecord) string {
 	if len(record.path) > 0 {
-		return strings.Join(record.path, " / ")
+		path := strings.Join(record.path, " / ")
+		if record.isLocation && record.name != "" && record.name != record.path[len(record.path)-1] {
+			return path + " / " + record.name
+		}
+		return path
 	}
 
 	return record.location
