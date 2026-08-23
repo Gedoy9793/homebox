@@ -17,7 +17,7 @@ func TestGenerateSampleLabels(t *testing.T) {
 		"standard": {
 			request: labelRequest{
 				title:   "Netgear GS308 switch",
-				footer:  "Rack 3 / Shelf 2",
+				detail:  "8-port gigabit",
 				assetID: testAssetID,
 				tags:    []string{"network", "core"},
 				url:     testAssetURL,
@@ -47,7 +47,7 @@ func TestGenerateSampleLabels(t *testing.T) {
 		"chinese": {
 			request: labelRequest{
 				title:   "三养辣鸡肉芝士味拌面（油炸方便面）",
-				footer:  "储物间 / 第二层",
+				detail:  "700克",
 				assetID: "000-108",
 				url:     "https://homebox.example.com/a/000-108",
 			},

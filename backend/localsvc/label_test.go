@@ -90,7 +90,7 @@ func itemsOfType(spec labelSpec, kind string) []labelItem {
 func TestRenderLabelEmbedsLayout(t *testing.T) {
 	request := labelRequest{
 		title:  testAssetID,
-		footer: "Network switch",
+		detail: "Network switch",
 		url:    "https://homebox.example.com/item/abc",
 	}
 
@@ -201,53 +201,14 @@ func TestHeadlineLeadsWithTheName(t *testing.T) {
 	}
 }
 
-// Both stocks that share the standard column layout lead with the name. Cable
-// flags put the asset ID on the back face instead, so they are checked separately.
-func TestBothProfilesLeadWithTheName(t *testing.T) {
-	request := labelRequest{
-		title:   "Switch",
-		footer:  testLocationName,
-		assetID: testAssetID,
-		url:     "https://example.com/a/000-042",
-	}
-
-	for _, name := range []string{profileStandard} {
-		t.Run(name, func(t *testing.T) {
-			spec, err := buildSpec(request, profiles[name])
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			texts := itemsOfType(spec, itemText)
-			if len(texts) < 2 {
-				t.Fatalf("expected a headline and a subtitle, got %d text items", len(texts))
-			}
-
-			if texts[0].Text != request.title || !texts[0].Bold {
-				t.Errorf("expected the name in bold first, got %+v", texts[0])
-			}
-			if texts[1].Text != testAssetID || texts[1].Bold {
-				t.Errorf("expected the asset ID underneath in regular type, got %+v", texts[1])
-			}
-			if texts[1].FontHeight >= texts[0].FontHeight {
-				t.Errorf("expected the asset ID to be smaller than the name, got %g and %g",
-					texts[1].FontHeight, texts[0].FontHeight)
-			}
-		})
-	}
-}
-
-// The footer runs under the QR code and the headline, across the whole label:
-// beside the QR code it would be a few characters wide.
-func TestFooterRunsFullWidthUnderTheCode(t *testing.T) {
-	standard := profiles[profileStandard]
-
+// Item labels lead with the name on the right and put the smaller asset ID under
+// the QR code on the left.
+func TestItemLabelLeadsWithTheName(t *testing.T) {
 	spec, err := buildSpec(labelRequest{
-		title:   testItemName,
-		footer:  testLocationName,
+		title:   "Switch",
 		assetID: testAssetID,
 		url:     "https://example.com/a/000-042",
-	}, standard)
+	}, profiles[profileStandard])
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -256,28 +217,56 @@ func TestFooterRunsFullWidthUnderTheCode(t *testing.T) {
 	if len(codes) != 1 {
 		t.Fatalf("expected one QR code, got %d", len(codes))
 	}
+	codeRight := codes[0].X + codes[0].Width
 	codeBottom := codes[0].Y + codes[0].Height
 
-	footer := 0
+	var name, id *labelItem
 	for _, item := range itemsOfType(spec, itemText) {
-		if item.Text == testAssetID || strings.Contains(testItemName, item.Text) {
-			continue
-		}
-
-		footer++
-		if item.Y+0.01 < codeBottom {
-			t.Errorf("expected the footer below the QR code (y=%g, code ends at %g)", item.Y, codeBottom)
-		}
-		if item.X > standard.paddingMM+0.01 {
-			t.Errorf("expected the footer to start at the left margin, got x=%g", item.X)
-		}
-		if item.Width < standard.widthMM-2*standard.paddingMM-0.01 {
-			t.Errorf("expected the footer to span the label, got width=%g", item.Width)
+		switch item.Text {
+		case "Switch":
+			cp := item
+			name = &cp
+		case testAssetID:
+			cp := item
+			id = &cp
 		}
 	}
+	if name == nil {
+		t.Fatal("expected the name on the label")
+	}
+	if id == nil {
+		t.Fatal("expected the asset ID on the label")
+	}
+	if !name.Bold || name.X+0.01 < codeRight {
+		t.Errorf("expected the name bold in the right column, got %+v", name)
+	}
+	if id.Bold || id.X > codes[0].X+0.01 || id.Y+0.01 < codeBottom {
+		t.Errorf("expected the asset ID under the QR code, got %+v", id)
+	}
+	if id.FontHeight >= name.FontHeight {
+		t.Errorf("expected the asset ID to be smaller than the name, got %g and %g",
+			id.FontHeight, name.FontHeight)
+	}
+}
 
-	if footer == 0 {
-		t.Fatal("expected the footer to be laid out")
+// Item labels omit the location path; the right column is for name, tags and
+// description instead.
+func TestItemLabelOmitsLocationPath(t *testing.T) {
+	spec, err := buildSpec(labelRequest{
+		title:   testItemName,
+		footer:  testLocationName,
+		detail:  "Spare parts",
+		assetID: testAssetID,
+		url:     "https://example.com/a/000-042",
+	}, profiles[profileStandard])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, item := range itemsOfType(spec, itemText) {
+		if item.Text == testLocationName || strings.Contains(item.Text, testLocationName) {
+			t.Fatalf("expected the location path to be omitted, got %q", item.Text)
+		}
 	}
 }
 
@@ -433,11 +422,10 @@ func TestCableSecondFaceCarriesTheIDAndDescription(t *testing.T) {
 	}
 }
 
-// Item labels print tags in the column under the asset ID.
+// Item labels print tags in the right column under the name.
 func TestItemLabelIncludesTags(t *testing.T) {
 	spec, err := buildSpec(labelRequest{
 		title:   "Switch",
-		footer:  "Rack 3",
 		assetID: testAssetID,
 		tags:    []string{"network", "core"},
 		url:     "https://example.com/a/000-042",
@@ -446,11 +434,24 @@ func TestItemLabelIncludesTags(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	codes := itemsOfType(spec, itemQRCode)
+	if len(codes) != 1 {
+		t.Fatalf("expected one QR code, got %d", len(codes))
+	}
+	codeRight := codes[0].X + codes[0].Width
+
 	joined := ""
+	foundTag := false
 	for _, item := range itemsOfType(spec, itemText) {
 		joined += item.Text + " "
+		if strings.Contains(item.Text, "network") {
+			foundTag = true
+			if item.X+0.01 < codeRight {
+				t.Errorf("expected tags in the right column, got x=%g", item.X)
+			}
+		}
 	}
-	if !strings.Contains(joined, "network") {
+	if !foundTag {
 		t.Fatalf("expected tags on the item label, got %q", joined)
 	}
 }
@@ -671,8 +672,7 @@ func TestLabelEndpointServesPNGWithLayout(t *testing.T) {
 }
 
 // The label is built from the record, not from the text labelmaker assembled, so
-// it gets the name and the location as separate values instead of one string with
-// an English "Location: " in the middle of it.
+// it gets the name and asset ID from the database instead of the request text.
 func TestLabelEndpointPrefersTheRecordOverTheRequestText(t *testing.T) {
 	bindTestRecord(t, "endpoint")
 
@@ -705,20 +705,20 @@ func TestLabelEndpointPrefersTheRecordOverTheRequestText(t *testing.T) {
 	}
 	joined := strings.Join(text, " ")
 
-	// The record's own fields, with no room wasted on the word "Location".
-	for _, want := range []string{testAssetID, "Office AP", testLocationName} {
+	for _, want := range []string{testAssetID, "Office AP"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("expected %q on the label, got %q", want, joined)
 		}
 	}
-	for _, unwanted := range []string{"ignored", "Location"} {
+	for _, unwanted := range []string{"ignored", "Location", testLocationName} {
 		if strings.Contains(joined, unwanted) {
 			t.Errorf("expected %q to be left out, got %q", unwanted, joined)
 		}
 	}
 }
 
-// The footer is the full path when one is known, otherwise the parent's name.
+// The footer is the full path for location records; item records do not use it
+// on the printed label.
 func TestRecordFooter(t *testing.T) {
 	location := entityRecord{
 		name:        "Shelf 2",
@@ -732,7 +732,7 @@ func TestRecordFooter(t *testing.T) {
 		t.Fatalf("unexpected footer %q", got)
 	}
 
-	// An item also gets the full path to where it sits.
+	// An item still has a path in the record, used only if something asks for it.
 	item := entityRecord{
 		location: testLocationName,
 		path:     []string{"Garage", "Cupboard A", testLocationName},
@@ -822,12 +822,12 @@ func TestLocationLabelShowsNameIDAndPath(t *testing.T) {
 	}
 }
 
-// Item labels also print the full location path, but keep the smaller body size so
-// it still fits the 25x15mm stock.
-func TestItemLabelPathUsesBodySize(t *testing.T) {
+// Item labels omit the location path so the right column can hold tags and detail.
+func TestItemLabelOmitsPathEvenWhenProvided(t *testing.T) {
 	spec, err := buildSpec(labelRequest{
 		title:   "Switch",
 		footer:  "Garage / Cupboard A / Rack 3",
+		detail:  "24-port gigabit",
 		assetID: testAssetID,
 		url:     "https://example.com/a/000-042",
 	}, profiles[profileStandard])
@@ -835,18 +835,15 @@ func TestItemLabelPathUsesBodySize(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	found := false
+	joined := ""
 	for _, item := range itemsOfType(spec, itemText) {
-		if !strings.Contains(item.Text, "Garage") {
-			continue
-		}
-		found = true
-		if item.FontHeight > profiles[profileStandard].bodyMM+0.01 {
-			t.Errorf("expected the item path in the body size, got %g", item.FontHeight)
+		joined += item.Text + " "
+		if strings.Contains(item.Text, "Garage") || strings.Contains(item.Text, "Rack") {
+			t.Fatalf("expected no location path on the item label, got %q", item.Text)
 		}
 	}
-	if !found {
-		t.Fatal("expected the location path on the item label")
+	if !strings.Contains(joined, "24-port") {
+		t.Fatalf("expected the description on the item label, got %q", joined)
 	}
 }
 

@@ -39,13 +39,19 @@ func handleLabel(w http.ResponseWriter, r *http.Request) {
 		request.title = record.name
 		request.assetID = record.assetID.String()
 		request.detail = record.description
-		request.footer = recordFooter(record)
 		request.tags = append([]string(nil), record.tags...)
+		// Only location labels print the path; item labels spend that space on
+		// tags and description in the right column.
+		if record.isLocation {
+			request.footer = recordFooter(record)
+			// Prefer /a/000-042 in the QR so the code matches the printed number.
+			request.url = assetQRURL(labelURL, record.assetID)
+		}
 	} else {
 		// Fallback: the text labelmaker assembled. Its newlines are flattened
 		// because they join fields that a label reads better side by side.
 		request.title = query.Get("TitleText")
-		request.footer = strings.ReplaceAll(query.Get("DescriptionText"), "\n", " ")
+		request.detail = strings.ReplaceAll(query.Get("DescriptionText"), "\n", " ")
 	}
 
 	// Operator-configured extra text is not part of any record, so it can only

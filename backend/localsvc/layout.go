@@ -67,10 +67,9 @@ func headline(req labelRequest) (primary string, secondary string) {
 // labelRequest is the label content, split by where it goes rather than by where
 // it came from.
 //
-// detail sits in the column beside the QR code, under the name. footer runs across
-// the bottom of the label (or under the QR code), which is the only place wide
-// enough for something that reads as a sentence — a location path, or where an
-// item lives. tags are the tag names, joined for printing.
+// On item labels the right column holds the name, then tags, then detail. On
+// location labels it holds the name and footer (the full path). The asset ID
+// always sits under the QR code on the left.
 type labelRequest struct {
 	title   string
 	assetID string
@@ -171,31 +170,31 @@ func cableFrontTagMM(prof profile) float64 {
 	return fitted
 }
 
-// layoutStandard puts the QR code top left, the headline and detail in the column
-// beside it, and the location path immediately under the QR code across the full
-// width. The path may wrap onto a second line; empty space, if any, falls below it
-// rather than between the code and the path.
-//
-// Item stock keeps the body size for the path. Whatever does not fit in the column
-// above the path is dropped — a label is a summary.
-func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerFace font.Face, footerMM float64) []labelItem {
+// layoutStandard packs an item onto 25x15mm stock with the same left/right split
+// as a location label: QR code over the asset ID on the left, name over tags and
+// description on the right. The location path is left off — that belongs on a
+// location label.
+func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, _ font.Face, _ float64) []labelItem {
 	var items []labelItem
 
-	fullWidth := prof.widthMM - 2*prof.paddingMM
-	bodyLineHeight := prof.bodyMM * lineSpacing
-	footerLineHeight := footerMM * lineSpacing
 	gap := contentGap(prof)
+	bodyLineHeight := prof.bodyMM * lineSpacing
 
-	footerLines := wrapText(req.footer, footerFace, fullWidth, maxFooterLines)
-	footerHeight := float64(len(footerLines)) * footerLineHeight
+	idText := ""
+	if req.assetID != "" && req.assetID != req.title {
+		idText = req.assetID
+	}
+
+	idBlock := 0.0
+	if idText != "" {
+		idBlock = bodyLineHeight
+	}
 
 	qrSize := 0.0
 	if req.url != "" {
-		// Leave room under the code for the path (and a small gap), then cap by the
-		// usual width share so the text column beside it stays usable.
 		maxQR := prof.heightMM - 2*prof.paddingMM
-		if footerHeight > 0 {
-			maxQR -= footerHeight + gap
+		if idBlock > 0 {
+			maxQR -= idBlock + gap*0.4
 		}
 		qrSize = prof.qrMM
 		if qrSize <= 0 {
@@ -213,44 +212,48 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, footerF
 		})
 	}
 
-	footerTop := prof.paddingMM + qrSize
-	if qrSize > 0 && footerHeight > 0 {
-		footerTop += gap
+	leftWidth := qrSize
+	if leftWidth <= 0 && idText != "" {
+		// No code: give the asset ID a narrow left column so the name still owns
+		// most of the width on the right.
+		leftWidth = min(prof.widthMM*qrWidthCap(prof), prof.widthMM/2)
 	}
-	if qrSize == 0 {
-		// No code: keep the path on the bottom edge so a text-only label still
-		// has a stable place for it.
-		footerTop = prof.heightMM - prof.paddingMM - footerHeight
+
+	if idText != "" {
+		idY := prof.paddingMM + qrSize
+		if qrSize > 0 {
+			idY += gap * 0.4
+		}
+		appendLines(&items, wrapText(idText, bodyFace, leftWidth, 1),
+			prof.paddingMM, idY, leftWidth, prof.bodyMM, false)
 	}
 
 	textX := prof.paddingMM
-	if qrSize > 0 {
-		textX += qrSize + gap
+	if leftWidth > 0 {
+		textX += leftWidth + gap
 	}
 	textWidth := prof.widthMM - textX - prof.paddingMM
+	if textWidth <= 0 {
+		return items
+	}
 
-	primary, secondary := headline(req)
-
+	primary, _ := headline(req)
 	cursor := appendLines(&items, wrapText(primary, titleFace, textWidth, maxTitleLines),
 		textX, prof.paddingMM, textWidth, prof.titleMM, true)
 
-	if secondary != "" {
-		cursor = appendLines(&items, wrapText(secondary, bodyFace, textWidth, maxSubtitleLines),
-			textX, cursor, textWidth, prof.bodyMM, false)
-	}
-
 	if tagText := formatTags(req.tags); tagText != "" {
-		remaining := int((footerTop - cursor) / bodyLineHeight)
+		remaining := int((prof.heightMM - prof.paddingMM - cursor) / bodyLineHeight)
 		cursor = appendLines(&items, wrapText(tagText, bodyFace, textWidth, min(maxTagLines, remaining)),
 			textX, cursor, textWidth, prof.bodyMM, false)
 	}
 
-	// The column may run past the bottom of the QR code — it is to the right of it
-	// — but not into the path under the code.
-	appendLines(&items, wrapText(req.detail, bodyFace, textWidth, int((footerTop-cursor)/bodyLineHeight)),
-		textX, cursor, textWidth, prof.bodyMM, false)
-
-	appendLines(&items, footerLines, prof.paddingMM, footerTop, fullWidth, footerMM, false)
+	if req.detail != "" {
+		remaining := int((prof.heightMM - prof.paddingMM - cursor) / bodyLineHeight)
+		if remaining > 0 {
+			appendLines(&items, wrapText(req.detail, bodyFace, textWidth, remaining),
+				textX, cursor, textWidth, prof.bodyMM, false)
+		}
+	}
 
 	return items
 }
@@ -300,7 +303,7 @@ func layoutLocation(req labelRequest, prof profile, titleFace, bodyFace, footerF
 	}
 
 	leftWidth := qrSize
-	if leftWidth <= 0 {
+	if leftWidth <= 0 && idText != "" {
 		// No code: give the asset ID a narrow left column so the path still owns
 		// most of the width on the right.
 		leftWidth = min(prof.widthMM*qrWidthCap(prof), prof.widthMM/2)

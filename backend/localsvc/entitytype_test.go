@@ -210,3 +210,69 @@ func TestLookupEntityResolvesFromDatabase(t *testing.T) {
 		t.Errorf("expected a cable flag, got %q", got)
 	}
 }
+
+// Location labels need a six-digit asset ID. When the row still has none, the
+// label service assigns the next free number so the print can show 000-042.
+func TestLookupEntityAssignsAssetIDForLocations(t *testing.T) {
+	ctx := context.Background()
+
+	client, err := ent.Open("sqlite3",
+		"file:localsvc-location-asset?mode=memory&cache=shared&_fk=1&_time_format=sqlite")
+	if err != nil {
+		t.Fatalf("could not open the test database: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+		database.Store(nil)
+	})
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("could not create the schema: %v", err)
+	}
+
+	group, err := client.Group.Create().SetName("test").Save(ctx)
+	if err != nil {
+		t.Fatalf("could not create a group: %v", err)
+	}
+	locationType, err := client.EntityType.Create().
+		SetName("Shelf").
+		SetIsLocation(true).
+		SetGroup(group).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("could not create a location type: %v", err)
+	}
+	location, err := client.Entity.Create().
+		SetName("Shelf 2").
+		SetGroup(group).
+		SetEntityType(locationType).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("could not create a location: %v", err)
+	}
+	Bind(client)
+
+	labelURL := "https://homebox.example.com/location/" + location.ID.String()
+	got := lookupEntity(ctx, labelURL)
+	if got.assetID.Nil() {
+		t.Fatal("expected a location without an asset ID to be assigned one")
+	}
+	if got.assetID.String() != "000-001" {
+		t.Fatalf("expected the first free ID 000-001, got %q", got.assetID.String())
+	}
+
+	// A second lookup must keep the same ID, not mint another.
+	again := lookupEntity(ctx, labelURL)
+	if again.assetID != got.assetID {
+		t.Fatalf("expected the assigned ID to stick, got %v then %v", got.assetID, again.assetID)
+	}
+}
+
+func TestAssetQRURLRewritesLocationPaths(t *testing.T) {
+	got := assetQRURL("https://homebox.example.com/location/abc-def", 42)
+	if got != "https://homebox.example.com/a/000-042" {
+		t.Fatalf("unexpected QR URL %q", got)
+	}
+	if got := assetQRURL("https://homebox.example.com/a/000-042", 42); got != "https://homebox.example.com/a/000-042" {
+		t.Fatalf("expected an asset URL to be left alone, got %q", got)
+	}
+}

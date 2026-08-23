@@ -92,8 +92,7 @@ type entityRecord struct {
 	description string
 
 	// location is the name of the parent, and path the whole chain above this
-	// record from the top down. Both location and item labels print the path when
-	// it is available — "Shelf 2" on its own says nothing about which cupboard.
+	// record from the top down. Location labels print the path; item labels do not.
 	location string
 	path     []string
 
@@ -151,7 +150,48 @@ func lookupEntity(ctx context.Context, labelURL string) entityRecord {
 		record.tags = append(record.tags, tag.Name)
 	}
 
+	// Location labels print a six-digit asset ID under the QR code. Older
+	// locations may still have none — assign the next free number here so the
+	// label service can show it without changing Homebox's create paths.
+	if record.isLocation && record.assetID.Nil() {
+		record.assetID = assignNextAssetID(ctx, client, found.ID)
+	}
+
 	return record
+}
+
+// assignNextAssetID writes the next free six-digit asset ID onto the entity and
+// returns it. A zero result means the write failed; the label simply omits the
+// number rather than failing the print.
+func assignNextAssetID(ctx context.Context, client *ent.Client, id uuid.UUID) repo.AssetID {
+	next := int64(1)
+	if highest, err := client.Entity.Query().Order(ent.Desc(entity.FieldAssetID)).First(ctx); err == nil {
+		next = highest.AssetID + 1
+	}
+
+	if _, err := client.Entity.UpdateOneID(id).SetAssetID(next).Save(ctx); err != nil {
+		log.Debug().Err(err).Msg("Can not assign an asset ID for a location label")
+		return 0
+	}
+
+	return repo.AssetID(next)
+}
+
+// assetQRURL rewrites a record URL to the /a/<asset-id> form when possible, so
+// the printed QR encodes the same six-digit code shown under it.
+func assetQRURL(labelURL string, assetID repo.AssetID) string {
+	if assetID.Nil() || labelURL == "" {
+		return labelURL
+	}
+
+	trimmed := strings.TrimRight(labelURL, "/")
+	for _, marker := range []string{"/location/", "/item/"} {
+		if i := strings.LastIndex(trimmed, marker); i >= 0 {
+			return trimmed[:i] + "/a/" + assetID.String()
+		}
+	}
+
+	return labelURL
 }
 
 // ancestry walks up from start and returns the names from the top down, so a
