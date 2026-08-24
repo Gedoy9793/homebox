@@ -17,6 +17,10 @@ type labelSpec struct {
 	Width  float64 `json:"width"`
 	Height float64 `json:"height"`
 
+	// GapType and GapLength describe the physical stock, not content spacing.
+	GapType   int     `json:"gapType,omitempty"`
+	GapLength float64 `json:"gapLength,omitempty"`
+
 	// Rotation turns the whole layout when it is printed, so a tall label can be
 	// drawn — and read — the long way round. Width and Height describe the canvas
 	// the items are positioned on, which is the label turned by this angle.
@@ -112,6 +116,11 @@ type profile struct {
 	heightMM  float64
 	paddingMM float64
 
+	// gapType and stockGapMM describe how the printer finds the next label on
+	// this stock. They are separate from gapMM, which only spaces the content.
+	gapType    int
+	stockGapMM float64
+
 	// gapMM separates the QR code from the text column and from the footer path.
 	// Zero falls back to the shared default used by the small item and cable stock.
 	gapMM float64
@@ -147,6 +156,9 @@ const (
 	profileLocation = "location"
 
 	defaultProfileName = profileStandard
+
+	gapStockType       = 2
+	standardStockGapMM = 6
 )
 
 var profiles = map[string]profile{
@@ -154,26 +166,30 @@ var profiles = map[string]profile{
 	// line and the description whatever is left under it, so the type sizes are
 	// smaller than a bigger label would want.
 	profileStandard: {
-		name:      profileStandard,
-		widthMM:   25,
-		heightMM:  15,
-		paddingMM: 1,
-		titleMM:   2.8,
-		bodyMM:    2,
+		name:       profileStandard,
+		widthMM:    25,
+		heightMM:   15,
+		paddingMM:  1,
+		gapType:    gapStockType,
+		stockGapMM: standardStockGapMM,
+		titleMM:    2.8,
+		bodyMM:     2,
 	},
 	// A 25x15mm location label on the same stock as item labels. Split left/right:
 	// QR above the asset ID on the left, name above the full path on the right.
 	// Description and tags are left off so the path can stay readable.
 	profileLocation: {
-		name:      profileLocation,
-		widthMM:   25,
-		heightMM:  15,
-		paddingMM: 1,
-		gapMM:     1,
-		qrShare:   0.42,
-		titleMM:   2.8,
-		bodyMM:    1.8,
-		footerMM:  1.7,
+		name:       profileLocation,
+		widthMM:    25,
+		heightMM:   15,
+		paddingMM:  1,
+		gapType:    gapStockType,
+		stockGapMM: standardStockGapMM,
+		gapMM:      1,
+		qrShare:    0.42,
+		titleMM:    2.8,
+		bodyMM:     1.8,
+		footerMM:   1.7,
 	},
 	// A cable flag: 25x38mm, folded in half across its width into two 12.5x38mm
 	// faces, so the same content is printed twice and stays readable from either

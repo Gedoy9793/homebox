@@ -105,6 +105,9 @@ func TestRenderLabelEmbedsLayout(t *testing.T) {
 	if spec.Width != standard.widthMM || spec.Height != standard.heightMM {
 		t.Fatalf("expected a %gx%gmm label, got %gx%g", standard.widthMM, standard.heightMM, spec.Width, spec.Height)
 	}
+	if spec.GapType != 2 || spec.GapLength != 6 {
+		t.Fatalf("expected 25x15mm gap stock with a 6mm gap, got type %d and gap %gmm", spec.GapType, spec.GapLength)
+	}
 
 	codes := itemsOfType(spec, itemQRCode)
 	if len(codes) != 1 {
@@ -136,6 +139,58 @@ func TestRenderLabelEmbedsLayout(t *testing.T) {
 		if item.Wrap != "none" {
 			t.Fatalf("expected wrapping to be resolved here, got %q", item.Wrap)
 		}
+	}
+}
+
+func TestLabelStockSettingsFollowProfile(t *testing.T) {
+	cableAtStandardSize := profiles[profileCable]
+	cableAtStandardSize.widthMM = 25
+	cableAtStandardSize.heightMM = 15
+
+	tests := []struct {
+		name    string
+		profile profile
+		wantGap bool
+	}{
+		{name: profileStandard, profile: profiles[profileStandard], wantGap: true},
+		{name: profileLocation, profile: profiles[profileLocation], wantGap: true},
+		{name: profileCable, profile: profiles[profileCable]},
+		{name: "cable with 25x15 override", profile: cableAtStandardSize},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, err := buildSpec(labelRequest{title: "Test label"}, tt.profile)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			raw, err := json.Marshal(spec.printable())
+			if err != nil {
+				t.Fatalf("could not encode the label spec: %v", err)
+			}
+
+			var payload map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &payload); err != nil {
+				t.Fatalf("could not decode the label spec: %v", err)
+			}
+
+			gapType, hasGapType := payload["gapType"]
+			gapLength, hasGapLength := payload["gapLength"]
+			if !tt.wantGap {
+				if hasGapType || hasGapLength {
+					t.Fatalf("expected no stock gap settings, got %s", raw)
+				}
+				return
+			}
+
+			if !hasGapType || string(gapType) != "2" {
+				t.Fatalf("expected gapType 2, got %s", raw)
+			}
+			if !hasGapLength || string(gapLength) != "6" {
+				t.Fatalf("expected gapLength 6, got %s", raw)
+			}
+		})
 	}
 }
 

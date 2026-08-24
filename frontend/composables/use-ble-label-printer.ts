@@ -265,6 +265,7 @@ export function useBleLabelPrinter() {
         await api.commitJob({
           printCopies: copies,
           gapType: spec.gapType,
+          gapLength: spec.gapLength,
           printSpeed: spec.printSpeed,
           printDarkness: spec.printDarkness,
           threshold: spec.threshold,

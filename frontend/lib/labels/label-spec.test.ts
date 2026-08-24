@@ -55,6 +55,7 @@ describe("parseLabelSpec", () => {
       height: 30,
       rotation: 90,
       gapType: 2,
+      gapLength: 6,
       printSpeed: 3,
       printDarkness: 8,
       threshold: 192,
@@ -81,6 +82,7 @@ describe("parseLabelSpec", () => {
       "image",
     ]);
     expect(spec.rotation).toBe(90);
+    expect(spec.gapLength).toBe(6);
   });
 
   it("clamps the copy count into a printable range", () => {
@@ -153,6 +155,8 @@ describe("the bundled label service", () => {
   const emitted = {
     width: 25,
     height: 15,
+    gapType: 2,
+    gapLength: 6,
     items: [
       {
         type: "qrcode",
@@ -191,7 +195,7 @@ describe("the bundled label service", () => {
   it("emits a layout this parser accepts", () => {
     const spec = parseLabelSpec(emitted);
 
-    expect(spec).toMatchObject({ width: 25, height: 15 });
+    expect(spec).toMatchObject({ width: 25, height: 15, gapType: 2, gapLength: 6 });
     expect(spec.items).toHaveLength(3);
     expect(spec.items[0]).toMatchObject({ type: "qrcode", text: emitted.items[0].text });
     expect(spec.items[1]).toMatchObject({ type: "text", text: "000-042", bold: true, fontHeight: 2.8 });

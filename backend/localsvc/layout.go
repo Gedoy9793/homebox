@@ -126,7 +126,13 @@ func buildSpec(req labelRequest, prof profile) (labelSpec, error) {
 		canvas.widthMM, canvas.heightMM = prof.heightMM, prof.widthMM
 	}
 
-	spec := labelSpec{Width: canvas.widthMM, Height: canvas.heightMM, Rotation: prof.rotation}
+	spec := labelSpec{
+		Width:     canvas.widthMM,
+		Height:    canvas.heightMM,
+		GapType:   prof.gapType,
+		GapLength: prof.stockGapMM,
+		Rotation:  prof.rotation,
+	}
 
 	if canvas.flag {
 		tagMM := cableFrontTagMM(canvas)

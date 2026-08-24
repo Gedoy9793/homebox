@@ -124,6 +124,8 @@ export interface LabelSpec {
   rotation?: LabelRotation;
   /** Paper type: 0 continuous, 2 gap, 3 black mark, 4 transparent, 255 printer default. */
   gapType?: number;
+  /** Physical gap between die-cut labels, in millimetres. */
+  gapLength?: number;
   /** 1 (slowest) to 5 (fastest), 255 for the printer default. */
   printSpeed?: number;
   /** 1 (lightest) to 15 (darkest), 255 for the printer default. */
@@ -367,6 +369,7 @@ export function parseLabelSpec(value: unknown): LabelSpec {
     height: edge(raw.height, "height"),
     rotation: rotation(raw.rotation, "rotation"),
     gapType: optionalNumber(raw.gapType, "gapType"),
+    gapLength: optionalNumber(raw.gapLength, "gapLength"),
     printSpeed: optionalNumber(raw.printSpeed, "printSpeed"),
     printDarkness: optionalNumber(raw.printDarkness, "printDarkness"),
     threshold: optionalNumber(raw.threshold, "threshold"),
