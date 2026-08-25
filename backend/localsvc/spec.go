@@ -33,10 +33,6 @@ type labelSpec struct {
 	// the items are positioned on, which is the label turned by this angle.
 	Rotation int `json:"rotation,omitempty"`
 
-	// HorizontalOffset and VerticalOffset shift the whole drawing in millimetres.
-	HorizontalOffset float64 `json:"horizontalOffset,omitempty"`
-	VerticalOffset   float64 `json:"verticalOffset,omitempty"`
-
 	Items []labelItem `json:"items"`
 }
 
@@ -44,14 +40,12 @@ type labelSpec struct {
 // keeping either field independently optional.
 func (s labelSpec) MarshalJSON() ([]byte, error) {
 	type wire struct {
-		Width            float64     `json:"width"`
-		Height           float64     `json:"height"`
-		GapType          *int        `json:"gapType,omitempty"`
-		GapLength        *float64    `json:"gapLength,omitempty"`
-		Rotation         int         `json:"rotation,omitempty"`
-		HorizontalOffset float64     `json:"horizontalOffset,omitempty"`
-		VerticalOffset   float64     `json:"verticalOffset,omitempty"`
-		Items            []labelItem `json:"items"`
+		Width     float64     `json:"width"`
+		Height    float64     `json:"height"`
+		GapType   *int        `json:"gapType,omitempty"`
+		GapLength *float64    `json:"gapLength,omitempty"`
+		Rotation  int         `json:"rotation,omitempty"`
+		Items     []labelItem `json:"items"`
 	}
 
 	var gapType *int
@@ -64,14 +58,12 @@ func (s labelSpec) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(wire{
-		Width:            s.Width,
-		Height:           s.Height,
-		GapType:          gapType,
-		GapLength:        gapLength,
-		Rotation:         s.Rotation,
-		HorizontalOffset: s.HorizontalOffset,
-		VerticalOffset:   s.VerticalOffset,
-		Items:            s.Items,
+		Width:     s.Width,
+		Height:    s.Height,
+		GapType:   gapType,
+		GapLength: gapLength,
+		Rotation:  s.Rotation,
+		Items:     s.Items,
 	})
 }
 
@@ -80,14 +72,12 @@ func (s labelSpec) MarshalJSON() ([]byte, error) {
 // into an omitted setting.
 func (s *labelSpec) UnmarshalJSON(data []byte) error {
 	type wire struct {
-		Width            float64     `json:"width"`
-		Height           float64     `json:"height"`
-		GapType          *int        `json:"gapType"`
-		GapLength        *float64    `json:"gapLength"`
-		Rotation         int         `json:"rotation"`
-		HorizontalOffset float64     `json:"horizontalOffset"`
-		VerticalOffset   float64     `json:"verticalOffset"`
-		Items            []labelItem `json:"items"`
+		Width     float64     `json:"width"`
+		Height    float64     `json:"height"`
+		GapType   *int        `json:"gapType"`
+		GapLength *float64    `json:"gapLength"`
+		Rotation  int         `json:"rotation"`
+		Items     []labelItem `json:"items"`
 	}
 
 	var decoded wire
@@ -98,8 +88,6 @@ func (s *labelSpec) UnmarshalJSON(data []byte) error {
 	s.Width = decoded.Width
 	s.Height = decoded.Height
 	s.Rotation = decoded.Rotation
-	s.HorizontalOffset = decoded.HorizontalOffset
-	s.VerticalOffset = decoded.VerticalOffset
 	s.Items = decoded.Items
 	s.gapTypeConfigured = decoded.GapType != nil
 	s.gapLengthConfigured = decoded.GapLength != nil
@@ -238,9 +226,6 @@ type profile struct {
 	gapTypeConfigured   bool
 	gapLengthConfigured bool
 
-	horizontalOffsetMM float64
-	verticalOffsetMM   float64
-
 	// gapMM separates the QR code from the text column and from the footer path.
 	// Zero falls back to the shared default used by the small item and cable stock.
 	gapMM float64
@@ -277,12 +262,8 @@ const (
 
 	defaultProfileName = profileStandard
 
-	gapStockType = 2
-
-	// Die-cut 25x15mm stock on this printer: 7mm between labels, and a 4mm
-	// downward shift so later copies do not start short of the die-cut.
-	dieCutGapMM            = 7.0
-	dieCutVerticalOffsetMM = 4.0
+	gapStockType       = 2
+	standardStockGapMM = 6
 )
 
 var profiles = map[string]profile{
@@ -295,10 +276,9 @@ var profiles = map[string]profile{
 		heightMM:            15,
 		paddingMM:           1,
 		gapType:             gapStockType,
-		stockGapMM:          dieCutGapMM,
+		stockGapMM:          standardStockGapMM,
 		gapTypeConfigured:   true,
 		gapLengthConfigured: true,
-		verticalOffsetMM:    dieCutVerticalOffsetMM,
 		titleMM:             2.8,
 		bodyMM:              2,
 	},
@@ -311,10 +291,9 @@ var profiles = map[string]profile{
 		heightMM:            15,
 		paddingMM:           1,
 		gapType:             gapStockType,
-		stockGapMM:          dieCutGapMM,
+		stockGapMM:          standardStockGapMM,
 		gapTypeConfigured:   true,
 		gapLengthConfigured: true,
-		verticalOffsetMM:    dieCutVerticalOffsetMM,
 		gapMM:               1,
 		qrShare:             0.42,
 		titleMM:             2.8,
@@ -401,9 +380,9 @@ func applyStockOverrides(selected profile) profile {
 		selected.stockGapMM = gapLength
 		selected.gapLengthConfigured = true
 	} else if validType && (gapType == gapTypeContinuous || gapType == gapTypePrinterDefault) {
-		// A profile gap length is only meaningful for sensed stock. If the
-		// operator explicitly asks for continuous paper or the printer's own
-		// stored setting, omit a leftover millimetre value.
+		// A profile's 6mm default is meaningful only for die-cut gap stock. If
+		// the operator explicitly asks the printer to use continuous paper or
+		// its own stored setting, omit the stale profile gap length.
 		selected.stockGapMM = 0
 		selected.gapLengthConfigured = false
 	}
