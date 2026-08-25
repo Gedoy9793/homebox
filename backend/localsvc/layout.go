@@ -134,6 +134,8 @@ func buildSpec(req labelRequest, prof profile) (labelSpec, error) {
 		gapTypeConfigured:   prof.gapTypeConfigured,
 		gapLengthConfigured: prof.gapLengthConfigured,
 		Rotation:            prof.rotation,
+		HorizontalOffset:    prof.horizontalOffsetMM,
+		VerticalOffset:      prof.verticalOffsetMM,
 	}
 
 	if canvas.flag {

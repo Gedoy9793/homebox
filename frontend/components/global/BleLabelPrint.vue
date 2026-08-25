@@ -262,7 +262,7 @@
           min="0"
           max="163.83"
           step="0.01"
-          :placeholder="spec?.gapLength?.toString()"
+          :placeholder="(spec?.gapLength ?? printerInfo?.gapLength)?.toString() ?? '7'"
         />
       </div>
       <div class="w-24">
@@ -274,7 +274,7 @@
           min="-20"
           max="20"
           step="0.1"
-          placeholder="0"
+          :placeholder="(spec?.horizontalOffset ?? 0).toString()"
         />
       </div>
       <div class="w-24">
@@ -286,7 +286,7 @@
           min="-20"
           max="20"
           step="0.1"
-          placeholder="0"
+          :placeholder="(spec?.verticalOffset ?? 4).toString()"
         />
       </div>
       <div class="w-24">

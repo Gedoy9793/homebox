@@ -226,7 +226,8 @@ describe("the bundled label service", () => {
     width: 25,
     height: 15,
     gapType: 2,
-    gapLength: 6,
+    gapLength: 7,
+    verticalOffset: 4,
     items: [
       {
         type: "qrcode",
@@ -269,7 +270,8 @@ describe("the bundled label service", () => {
       width: 25,
       height: 15,
       gapType: 2,
-      gapLength: 6,
+      gapLength: 7,
+      verticalOffset: 4,
     });
     expect(spec.items).toHaveLength(3);
     expect(spec.items[0]).toMatchObject({

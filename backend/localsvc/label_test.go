@@ -106,8 +106,8 @@ func TestRenderLabelEmbedsLayout(t *testing.T) {
 	if spec.Width != standard.widthMM || spec.Height != standard.heightMM || spec.Rotation != 0 {
 		t.Fatalf("expected a %gx%gmm label, got %gx%g", standard.widthMM, standard.heightMM, spec.Width, spec.Height)
 	}
-	if spec.GapType != 2 || spec.GapLength != 6 {
-		t.Fatalf("expected 25x15mm gap stock with a 6mm gap, got type %d and gap %gmm", spec.GapType, spec.GapLength)
+	if spec.GapType != 2 || spec.GapLength != 7 || spec.VerticalOffset != 4 {
+		t.Fatalf("expected 25x15mm gap stock with a 7mm gap and 4mm vertical offset, got type %d, gap %gmm, offset %gmm", spec.GapType, spec.GapLength, spec.VerticalOffset)
 	}
 
 	codes := itemsOfType(spec, itemQRCode)
@@ -178,8 +178,9 @@ func TestLabelStockSettingsFollowProfile(t *testing.T) {
 
 			gapType, hasGapType := payload["gapType"]
 			gapLength, hasGapLength := payload["gapLength"]
+			offset, hasOffset := payload["verticalOffset"]
 			if !tt.wantGap {
-				if hasGapType || hasGapLength {
+				if hasGapType || hasGapLength || hasOffset {
 					t.Fatalf("expected no stock gap settings, got %s", raw)
 				}
 				return
@@ -188,8 +189,11 @@ func TestLabelStockSettingsFollowProfile(t *testing.T) {
 			if !hasGapType || string(gapType) != "2" {
 				t.Fatalf("expected gapType 2, got %s", raw)
 			}
-			if !hasGapLength || string(gapLength) != "6" {
-				t.Fatalf("expected gapLength 6, got %s", raw)
+			if !hasGapLength || string(gapLength) != "7" {
+				t.Fatalf("expected a 7mm die-cut gap, got %s", raw)
+			}
+			if !hasOffset || string(offset) != "4" {
+				t.Fatalf("expected a 4mm vertical offset, got %s", raw)
 			}
 		})
 	}

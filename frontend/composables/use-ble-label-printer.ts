@@ -47,6 +47,11 @@ const FONT_ITALIC = 2;
 const FONT_UNDERLINE = 4;
 
 const RESULT_OK = 0;
+/** lpapi-ble printable codes that mean the motor is still moving. */
+const PRINTABLE_PRINTING = 1;
+const PRINTABLE_MOTOR = 2;
+const PRINTER_IDLE_TIMEOUT_MS = 8000;
+const PRINTER_IDLE_POLL_MS = 80;
 
 // The SDK is ~330 KB and only needed once someone actually prints.
 let modulePromise: Promise<LpapiModule> | undefined;
@@ -213,19 +218,74 @@ const printerInfo = ref<PrinterInfo>();
 const busy = ref(false);
 
 let instance: Lpapi | undefined;
-let appliedOffset = { x: 0, y: 0 };
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function setDrawingOffset(api: Lpapi, x: number, y: number): void {
-  if (x !== appliedOffset.x || y !== appliedOffset.y) {
-    api.getContext().setOffset(x, y);
-    appliedOffset = { x, y };
-  }
+  // Always apply. startJob does not reset DrawContext offsets, so a previous
+  // rotated job can leave an axis-swapped leftover.
+  api.getContext().setOffset(x, y);
 }
 
 function resetDrawingOffset(api: Lpapi): void {
-  if (appliedOffset.x !== 0 || appliedOffset.y !== 0) {
-    api.getContext().setOffset(0, 0);
-    appliedOffset = { x: 0, y: 0 };
+  api.getContext().setOffset(0, 0);
+}
+
+type PagePrintProgress = LpapiResponse & {
+  copyIndex?: number;
+  printCopies?: number;
+  pageIndex?: number;
+  printPages?: number;
+};
+
+function pageIsLast(info: PagePrintProgress, copies: number): boolean {
+  const copyIndex = info.copyIndex ?? 0;
+  const printCopies = info.printCopies ?? copies;
+  const pageIndex = info.pageIndex ?? 0;
+  const printPages = info.printPages ?? 1;
+  return pageIndex + 1 >= printPages && copyIndex + 1 >= printCopies;
+}
+
+/**
+ * commitJob resolves when the page has been sent. The motor is often still
+ * feeding to the next die-cut at that point, and the next job then starts
+ * short — later labels print high. Wait for the page-complete callback.
+ */
+async function waitForPagePrinted(
+  send: (onPagePrintComplete: (info: PagePrintProgress) => void) => Promise<LpapiResponse>,
+  copies = 1
+): Promise<LpapiResponse> {
+  let lastPage: PagePrintProgress | undefined;
+  let notifyPrinted = () => {};
+  const printed = new Promise<void>(resolve => {
+    notifyPrinted = resolve;
+  });
+
+  const sent = await send(info => {
+    lastPage = info;
+    if (pageIsLast(info, copies)) {
+      notifyPrinted();
+    }
+  });
+
+  if (sent.statusCode !== RESULT_OK) {
+    return sent;
+  }
+
+  await Promise.race([printed, sleep(PRINTER_IDLE_TIMEOUT_MS)]);
+  return lastPage ?? sent;
+}
+
+async function waitUntilPrinterIdle(api: Lpapi, timeoutMs = PRINTER_IDLE_TIMEOUT_MS): Promise<void> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const printable = api.getPrinterInfo()?.printable;
+    if (printable !== PRINTABLE_PRINTING && printable !== PRINTABLE_MOTOR) {
+      return;
+    }
+    await sleep(PRINTER_IDLE_POLL_MS);
   }
 }
 
@@ -299,51 +359,69 @@ export function useBleLabelPrinter() {
   /** Draws and prints a label layout at the printer's own resolution. */
   function printSpec(spec: LabelSpec, copies = 1): Promise<void> {
     return withPrinter(async (lpapi, api) => {
-      const job = api.startJob({
-        width: spec.width,
-        height: spec.height,
-        orientation: spec.rotation ?? 0,
-      });
-      if (!job) {
-        throw new Error("the printer rejected the print job");
-      }
-
-      // The encoder's offset options are not consumed by this SDK version.
-      // DrawContext applies the offset before conversion to printer dots and
-      // also swaps the axes correctly for a rotated label. Reset a previous
-      // calibration when the next job does not request one.
+      const count = Math.min(Math.max(Math.round(copies) || 1, 1), 99);
+      const paper = {
+        gapType: spec.gapType,
+        gapLength: spec.gapLength,
+        printSpeed: spec.printSpeed,
+        printDarkness: spec.printDarkness,
+        threshold: spec.threshold,
+      };
       const nextOffset = {
         x: spec.horizontalOffset ?? 0,
         y: spec.verticalOffset ?? 0,
       };
-      setDrawingOffset(api, nextOffset.x, nextOffset.y);
 
-      try {
-        try {
-          for (const item of spec.items) {
-            await drawItem(lpapi, api, item);
-          }
-        } catch (err) {
-          api.abortJob();
-          throw err;
+      // One page per job. The SDK will otherwise send every copy as soon as the
+      // Bluetooth buffer is free, before the motor has found the next gap.
+      for (let copy = 0; copy < count; copy++) {
+        const job = api.startJob({
+          width: spec.width,
+          height: spec.height,
+          orientation: spec.rotation ?? 0,
+          // Both flags are required by this SDK to drop a leftover job.
+          resetJob: true,
+          autoAbort: true,
+          ...paper,
+        } as Parameters<Lpapi["startJob"]>[0]);
+        if (!job) {
+          throw new Error("the printer rejected the print job");
         }
 
-        assertOk(
-          lpapi,
-          await api.commitJob({
-            printCopies: copies,
-            gapType: spec.gapType,
-            gapLength: spec.gapLength,
-            printSpeed: spec.printSpeed,
-            printDarkness: spec.printDarkness,
-            threshold: spec.threshold,
-            ...(spec.printAlignment === undefined ? {} : { printAlignment: spec.printAlignment }),
-            ...(spec.antiColor === undefined ? {} : { antiColor: spec.antiColor }),
-            ...(spec.horizontalFlip === undefined ? {} : { horizontalFlip: spec.horizontalFlip }),
-          })
-        );
-      } finally {
-        resetDrawingOffset(api);
+        // The encoder's offset options are not consumed by this SDK version.
+        // DrawContext applies the offset before conversion to printer dots and
+        // also swaps the axes correctly for a rotated label.
+        setDrawingOffset(api, nextOffset.x, nextOffset.y);
+
+        try {
+          try {
+            for (const item of spec.items) {
+              await drawItem(lpapi, api, item);
+            }
+          } catch (err) {
+            api.abortJob();
+            throw err;
+          }
+
+          assertOk(
+            lpapi,
+            await waitForPagePrinted(
+              onPagePrintComplete =>
+                api.commitJob({
+                  printCopies: 1,
+                  ...paper,
+                  ...(spec.printAlignment === undefined ? {} : { printAlignment: spec.printAlignment }),
+                  ...(spec.antiColor === undefined ? {} : { antiColor: spec.antiColor }),
+                  ...(spec.horizontalFlip === undefined ? {} : { horizontalFlip: spec.horizontalFlip }),
+                  onPagePrintComplete,
+                }),
+              1
+            )
+          );
+          await waitUntilPrinterIdle(api);
+        } finally {
+          resetDrawingOffset(api);
+        }
       }
     });
   }
@@ -357,33 +435,42 @@ export function useBleLabelPrinter() {
     options: Partial<BleLabelSpecOverrides> = {}
   ): Promise<void> {
     return withPrinter(async (lpapi, api) => {
+      const count = Math.min(Math.max(Math.round(copies) || 1, 1), 99);
       const x = options.horizontalOffset ?? 0;
       const y = options.verticalOffset ?? 0;
 
-      try {
-        assertOk(
-          lpapi,
-          await api.printImage({
-            src,
-            width,
-            height,
-            copies,
-            gapType: options.gapType,
-            gapLength: options.gapLength,
-            printSpeed: options.printSpeed,
-            printDarkness: options.printDarkness,
-            ...(x === 0 && y === 0
-              ? {}
-              : {
-                  onJobCreated: async () => {
-                    setDrawingOffset(api, x, y);
-                    return true;
-                  },
+      for (let copy = 0; copy < count; copy++) {
+        try {
+          assertOk(
+            lpapi,
+            await waitForPagePrinted(
+              onPagePrintComplete =>
+                api.printImage({
+                  src,
+                  width,
+                  height,
+                  copies: 1,
+                  gapType: options.gapType,
+                  gapLength: options.gapLength,
+                  printSpeed: options.printSpeed,
+                  printDarkness: options.printDarkness,
+                  onPagePrintComplete,
+                  ...(x === 0 && y === 0
+                    ? {}
+                    : {
+                        onJobCreated: async () => {
+                          setDrawingOffset(api, x, y);
+                          return true;
+                        },
+                      }),
                 }),
-          })
-        );
-      } finally {
-        resetDrawingOffset(api);
+              1
+            )
+          );
+          await waitUntilPrinterIdle(api);
+        } finally {
+          resetDrawingOffset(api);
+        }
       }
     });
   }
