@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -102,7 +103,7 @@ func TestRenderLabelEmbedsLayout(t *testing.T) {
 	spec := embeddedSpec(t, raw)
 
 	standard := profiles[profileStandard]
-	if spec.Width != standard.widthMM || spec.Height != standard.heightMM {
+	if spec.Width != standard.widthMM || spec.Height != standard.heightMM || spec.Rotation != 0 {
 		t.Fatalf("expected a %gx%gmm label, got %gx%g", standard.widthMM, standard.heightMM, spec.Width, spec.Height)
 	}
 	if spec.GapType != 2 || spec.GapLength != 6 {
@@ -650,6 +651,198 @@ func TestResolveProfileEnvironmentDefaults(t *testing.T) {
 	}
 }
 
+func TestResolveProfileEnvironmentStockOverrides(t *testing.T) {
+	clearStockEnvironment(t)
+	t.Setenv(EnvProfile, "")
+	t.Setenv(EnvSize, "")
+	t.Setenv(EnvGapType, "3")
+	t.Setenv(EnvGapMM, "2.75")
+	t.Setenv(EnvGapLengthLegacy, "9")
+
+	for _, name := range []string{profileStandard, profileLocation, profileCable} {
+		t.Run(name, func(t *testing.T) {
+			got := resolveProfile(name, "")
+			if got.gapType != gapTypeBlackMark || got.stockGapMM != 2.75 {
+				t.Fatalf("expected black-mark stock with a 2.75mm gap, got type %d and gap %gmm", got.gapType, got.stockGapMM)
+			}
+
+			spec, err := buildSpec(labelRequest{title: "Test label"}, got)
+			if err != nil {
+				t.Fatalf("could not build label: %v", err)
+			}
+			if spec.GapType != 3 || spec.GapLength != 2.75 {
+				t.Fatalf("expected overrides in the printable layout, got type %d and gap %gmm", spec.GapType, spec.GapLength)
+			}
+		})
+	}
+}
+
+func TestResolveProfileEnvironmentLegacyGapLength(t *testing.T) {
+	clearStockEnvironment(t)
+	t.Setenv(EnvProfile, "")
+	t.Setenv(EnvSize, "")
+	t.Setenv(EnvGapType, "2")
+	t.Setenv(EnvGapMM, "")
+	t.Setenv(EnvGapLengthLegacy, "4.5")
+
+	got := resolveProfile(profileStandard, "")
+	if got.gapType != gapTypeDieCut || got.stockGapMM != 4.5 {
+		t.Fatalf("expected legacy gap length override, got type %d and gap %gmm", got.gapType, got.stockGapMM)
+	}
+}
+
+func TestResolveProfileEnvironmentContinuousStockClearsProfileGap(t *testing.T) {
+	clearStockEnvironment(t)
+	t.Setenv(EnvProfile, "")
+	t.Setenv(EnvSize, "")
+
+	for _, gapType := range []string{"0", "255"} {
+		t.Run(gapType, func(t *testing.T) {
+			t.Setenv(EnvGapType, gapType)
+			got := resolveProfile(profileStandard, "")
+			wantType, _ := strconv.Atoi(gapType)
+			if got.gapType != wantType || got.stockGapMM != 0 {
+				t.Fatalf("expected type %s with no gap length, got type %d and gap %gmm", gapType, got.gapType, got.stockGapMM)
+			}
+		})
+	}
+
+	// An explicit zero is also meaningful for a die-cut profile and must not be
+	// mistaken for an unset environment variable.
+	t.Setenv(EnvGapType, "2")
+	t.Setenv(EnvGapMM, "0")
+	got := resolveProfile(profileStandard, "")
+	if got.gapType != gapTypeDieCut || got.stockGapMM != 0 {
+		t.Fatalf("expected an explicit zero gap, got type %d and gap %gmm", got.gapType, got.stockGapMM)
+	}
+}
+
+func TestLabelSpecJSONKeepsExplicitZeroStockSettings(t *testing.T) {
+	continuous := labelSpec{
+		Width:               25,
+		Height:              15,
+		GapType:             gapTypeContinuous,
+		GapLength:           0,
+		gapTypeConfigured:   true,
+		gapLengthConfigured: true,
+		Items:               []labelItem{},
+	}
+
+	raw, err := json.Marshal(continuous)
+	if err != nil {
+		t.Fatalf("could not marshal continuous stock spec: %v", err)
+	}
+	if !strings.Contains(string(raw), `"gapType":0`) || !strings.Contains(string(raw), `"gapLength":0`) {
+		t.Fatalf("explicit zero stock settings were omitted: %s", raw)
+	}
+
+	cable := labelSpec{Width: 38, Height: 25, Items: []labelItem{}}
+	raw, err = json.Marshal(cable)
+	if err != nil {
+		t.Fatalf("could not marshal unconfigured stock spec: %v", err)
+	}
+	if strings.Contains(string(raw), "gapType") || strings.Contains(string(raw), "gapLength") {
+		t.Fatalf("unconfigured stock settings should stay omitted: %s", raw)
+	}
+}
+
+func TestLabelSpecJSONKeepsStockFieldPresenceIndependent(t *testing.T) {
+	tests := []struct {
+		name          string
+		raw           string
+		wantType      bool
+		wantGapLength bool
+	}{
+		{name: "neither", raw: `{"width":25,"height":15,"items":[]}`},
+		{name: "type only", raw: `{"width":25,"height":15,"gapType":0,"items":[]}`, wantType: true},
+		{name: "length only", raw: `{"width":25,"height":15,"gapLength":2.5,"items":[]}`, wantGapLength: true},
+		{name: "both", raw: `{"width":25,"height":15,"gapType":2,"gapLength":2.5,"items":[]}`, wantType: true, wantGapLength: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var spec labelSpec
+			if err := json.Unmarshal([]byte(tt.raw), &spec); err != nil {
+				t.Fatalf("could not decode label spec: %v", err)
+			}
+			roundTrip, err := json.Marshal(spec)
+			if err != nil {
+				t.Fatalf("could not re-encode label spec: %v", err)
+			}
+
+			var payload map[string]json.RawMessage
+			if err := json.Unmarshal(roundTrip, &payload); err != nil {
+				t.Fatalf("could not inspect label spec: %v", err)
+			}
+			_, hasType := payload["gapType"]
+			_, hasGapLength := payload["gapLength"]
+			if hasType != tt.wantType || hasGapLength != tt.wantGapLength {
+				t.Fatalf("stock field presence changed after round trip: %s", roundTrip)
+			}
+		})
+	}
+}
+
+func TestResolveProfileEnvironmentInvalidStockOverridesAreIgnored(t *testing.T) {
+	clearStockEnvironment(t)
+	t.Setenv(EnvProfile, "")
+	t.Setenv(EnvSize, "")
+	standard := profiles[profileStandard]
+
+	for _, raw := range []string{"-1", "5", "99", "not-a-type", "1.5"} {
+		t.Run("type-"+raw, func(t *testing.T) {
+			t.Setenv(EnvGapType, raw)
+			got := resolveProfile(profileStandard, "")
+			if got.gapType != standard.gapType || got.stockGapMM != standard.stockGapMM {
+				t.Fatalf("invalid gap type %q changed the profile: got type %d and gap %gmm", raw, got.gapType, got.stockGapMM)
+			}
+		})
+	}
+
+	for _, raw := range []string{"-1", "163.84", "NaN", "+Inf", "-Inf", "not-a-length"} {
+		t.Run("length-"+raw, func(t *testing.T) {
+			t.Setenv(EnvGapType, "")
+			t.Setenv(EnvGapMM, raw)
+			got := resolveProfile(profileStandard, "")
+			if got.gapType != standard.gapType || got.stockGapMM != standard.stockGapMM {
+				t.Fatalf("invalid gap length %q changed the profile: got type %d and gap %gmm", raw, got.gapType, got.stockGapMM)
+			}
+		})
+	}
+}
+
+func TestCableGapLengthOverrideDoesNotChangePaperMode(t *testing.T) {
+	clearStockEnvironment(t)
+	t.Setenv(EnvGapMM, "2.5")
+
+	spec, err := buildSpec(labelRequest{title: "Test cable"}, resolveProfile(profileCable, ""))
+	if err != nil {
+		t.Fatalf("could not build cable label: %v", err)
+	}
+	raw, err := json.Marshal(spec.printable())
+	if err != nil {
+		t.Fatalf("could not encode cable label: %v", err)
+	}
+
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("could not decode cable label: %v", err)
+	}
+	if _, exists := payload["gapType"]; exists {
+		t.Fatalf("a length-only override changed the cable paper mode: %s", raw)
+	}
+	if got := string(payload["gapLength"]); got != "2.5" {
+		t.Fatalf("expected a 2.5mm cable gap override, got %s", raw)
+	}
+}
+
+func clearStockEnvironment(t *testing.T) {
+	t.Helper()
+	t.Setenv(EnvGapType, "")
+	t.Setenv(EnvGapLength, "")
+	t.Setenv(EnvGapLengthLegacy, "")
+}
+
 func TestWrapTextBreaksLongWordsAndKeepsLineLimit(t *testing.T) {
 	set := loadedFonts()
 
@@ -816,7 +1009,7 @@ func TestLocationLabelShowsNameIDAndPath(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if spec.Width != 25 || spec.Height != 15 {
+	if spec.Width != 25 || spec.Height != 15 || spec.Rotation != 0 {
 		t.Fatalf("expected a 25x15mm label, got %gx%g", spec.Width, spec.Height)
 	}
 

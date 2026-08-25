@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import { useI18n } from "vue-i18n";
   import { type QueryValue, route } from "../../lib/api/base/urls";
+  import { readLabelSpecFromPng } from "~~/lib/labels/label-spec";
   import PageQRCode from "./PageQRCode.vue";
   import BleLabelPrint from "./BleLabelPrint.vue";
   import { DialogID } from "@/components/ui/dialog-provider/utils";
@@ -41,15 +42,62 @@
     return data;
   });
 
+  const labelPrinting = computed(() => status.value?.labelPrinting ?? false);
+
   const serverPrinting = ref(false);
 
-  function browserPrint() {
-    const printWindow = window.open(getLabelUrl(false), "popup=true");
+  async function browserPrint() {
+    // Open synchronously while the click is still active, otherwise popup
+    // blockers may reject the window after the label fetch completes.
+    const printWindow = window.open("", "_blank", "popup=true");
+    if (!printWindow) {
+      return;
+    }
 
-    if (printWindow !== null) {
-      printWindow.onload = () => {
+    try {
+      const response = await fetch(getLabelUrl(false));
+      if (!response.ok) {
+        throw new Error(`label request failed with status ${response.status}`);
+      }
+
+      const buffer = await response.arrayBuffer();
+      const spec = await readLabelSpecFromPng(buffer);
+      if (!spec) {
+        // External label services may return only a bitmap. Preserve the old
+        // behaviour when no physical dimensions are embedded in it.
+        printWindow.location.href = getLabelUrl(false);
+        printWindow.onload = () => printWindow.print();
+        return;
+      }
+
+      const blobUrl = URL.createObjectURL(new Blob([buffer], { type: "image/png" }));
+      const doc = printWindow.document;
+      doc.title = `label-${props.id}`;
+      doc.head.replaceChildren();
+      doc.body.replaceChildren();
+
+      const style = doc.createElement("style");
+      style.textContent = `
+        @page { size: ${spec.width}mm ${spec.height}mm; margin: 0; }
+        html, body { width: ${spec.width}mm; height: ${spec.height}mm; margin: 0; overflow: hidden; }
+        img { display: block; width: ${spec.width}mm; height: ${spec.height}mm; object-fit: fill; }
+      `;
+      doc.head.appendChild(style);
+
+      const image = doc.createElement("img");
+      image.alt = "";
+      image.onload = () => {
+        printWindow.focus();
         printWindow.print();
+        URL.revokeObjectURL(blobUrl);
       };
+      image.onerror = () => URL.revokeObjectURL(blobUrl);
+      image.src = blobUrl;
+      doc.body.appendChild(image);
+    } catch (err) {
+      printWindow.close();
+      console.error("Failed to prepare label for browser printing:", err);
+      toast.error(t("components.global.label_maker.toast.print_failed"));
     }
   }
 
@@ -114,7 +162,7 @@
         <BleLabelPrint :label-url="getLabelUrl(false)" />
         <DialogFooter>
           <ButtonGroup>
-            <Button v-if="status?.labelPrinting || false" type="submit" :disabled="serverPrinting" @click="serverPrint">
+            <Button v-if="labelPrinting" type="submit" :disabled="serverPrinting" @click="serverPrint">
               <MdiLoading v-if="serverPrinting" class="animate-spin" />
               {{ $t("components.global.label_maker.server_print") }}
             </Button>

@@ -8,6 +8,7 @@
   // with the button below, and the connection — shared through the composable —
   // is then reused for every create.
   import { useI18n } from "vue-i18n";
+  import { bleLabelSpecOverrides, useBleLabelSettings } from "~~/composables/use-ble-label-settings";
   import { labelUrl, type LabelKind } from "~~/lib/labels/label-url";
   import { Button } from "@/components/ui/button";
   import { Checkbox } from "@/components/ui/checkbox";
@@ -20,6 +21,7 @@
   const { selectedId } = useCollections();
 
   const settings = useLocalStorage("homebox/labels/auto-print", { enabled: false, copies: 1 }, { mergeDefaults: true });
+  const printerSettings = useBleLabelSettings();
 
   const copies = computed(() => Math.min(Math.max(Math.round(settings.value.copies) || 1, 1), 99));
 
@@ -53,7 +55,14 @@
     }
 
     try {
-      await printLabelUrl(labelUrl(kind, id, { tenant: selectedId.value ?? undefined }), { copies: copies.value });
+      await printLabelUrl(labelUrl(kind, id, { tenant: selectedId.value ?? undefined }), {
+        copies: copies.value,
+        fallback: {
+          width: printerSettings.value.width,
+          height: printerSettings.value.height,
+        },
+        specOverrides: bleLabelSpecOverrides(printerSettings.value),
+      });
       toast.success(t("components.global.label_maker.bluetooth.print_success"));
     } catch (err) {
       console.error("Bluetooth label printing failed:", err);

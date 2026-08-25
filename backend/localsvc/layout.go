@@ -127,11 +127,13 @@ func buildSpec(req labelRequest, prof profile) (labelSpec, error) {
 	}
 
 	spec := labelSpec{
-		Width:     canvas.widthMM,
-		Height:    canvas.heightMM,
-		GapType:   prof.gapType,
-		GapLength: prof.stockGapMM,
-		Rotation:  prof.rotation,
+		Width:               canvas.widthMM,
+		Height:              canvas.heightMM,
+		GapType:             prof.gapType,
+		GapLength:           prof.stockGapMM,
+		gapTypeConfigured:   prof.gapTypeConfigured,
+		gapLengthConfigured: prof.gapLengthConfigured,
+		Rotation:            prof.rotation,
 	}
 
 	if canvas.flag {

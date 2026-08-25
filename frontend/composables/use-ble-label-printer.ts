@@ -8,11 +8,34 @@
 // fed one through printBitmap.
 
 import { ref } from "vue";
+import type { BleLabelSpecOverrides } from "./use-ble-label-settings";
 import { readLabelSpecFromPng, type LabelItem, type LabelSpec } from "~~/lib/labels/label-spec";
 
 type LpapiModule = typeof import("lpapi-ble");
 type Lpapi = InstanceType<LpapiModule["LPAPI"]>;
-type LpapiResponse = { statusCode: number; errMsg?: string; printable?: number };
+type PrinterInfo = import("lpapi-ble").IPrinterInfoExt;
+type LpapiResponse = {
+  statusCode: number;
+  errMsg?: string;
+  printable?: number;
+};
+
+/**
+ * lpapi-ble reads the printer's gap register as hundredths of a millimetre,
+ * while commitJob accepts a millimetre value and performs that conversion
+ * itself. Keep the value exposed to the UI in the human-readable unit.
+ */
+export function printerGapLengthMm(value: number | undefined): number | undefined {
+  return value === undefined || !Number.isFinite(value) ? undefined : value / 100;
+}
+
+function normalizePrinterInfo(info: PrinterInfo | undefined): PrinterInfo | undefined {
+  if (!info || info.gapLength === undefined) {
+    return info;
+  }
+
+  return { ...info, gapLength: printerGapLengthMm(info.gapLength) };
+}
 
 /** dz-canvas Alignment. */
 const ALIGNMENT = { start: 0, center: 1, end: 2, stretch: 3 } as const;
@@ -111,7 +134,12 @@ async function drawItem(lpapi: LpapiModule, api: Lpapi, item: LabelItem): Promis
       return;
 
     case "qrcode":
-      api.drawQRCode({ ...placement, text: item.text, eccLevel: item.eccLevel, version: item.version });
+      api.drawQRCode({
+        ...placement,
+        text: item.text,
+        eccLevel: item.eccLevel,
+        version: item.version,
+      });
       return;
 
     case "barcode":
@@ -147,7 +175,11 @@ async function drawItem(lpapi: LpapiModule, api: Lpapi, item: LabelItem): Promis
       return;
 
     case "ellipse":
-      api.drawEllipse({ ...placement, lineWidth: item.lineWidth, fill: item.fill });
+      api.drawEllipse({
+        ...placement,
+        lineWidth: item.lineWidth,
+        fill: item.fill,
+      });
       return;
 
     case "circle":
@@ -177,9 +209,25 @@ async function drawItem(lpapi: LpapiModule, api: Lpapi, item: LabelItem): Promis
 const available = ref(isWebBluetoothAvailable());
 const connected = ref(false);
 const printerName = ref("");
+const printerInfo = ref<PrinterInfo>();
 const busy = ref(false);
 
 let instance: Lpapi | undefined;
+let appliedOffset = { x: 0, y: 0 };
+
+function setDrawingOffset(api: Lpapi, x: number, y: number): void {
+  if (x !== appliedOffset.x || y !== appliedOffset.y) {
+    api.getContext().setOffset(x, y);
+    appliedOffset = { x, y };
+  }
+}
+
+function resetDrawingOffset(api: Lpapi): void {
+  if (appliedOffset.x !== 0 || appliedOffset.y !== 0) {
+    api.getContext().setOffset(0, 0);
+    appliedOffset = { x: 0, y: 0 };
+  }
+}
 
 export function useBleLabelPrinter() {
   async function getApi(): Promise<{ lpapi: LpapiModule; api: Lpapi }> {
@@ -190,7 +238,16 @@ export function useBleLabelPrinter() {
 
   function syncConnection(api: Lpapi): void {
     connected.value = api.isPrinterOpened();
-    printerName.value = connected.value ? (api.getPrinterInfo()?.name ?? "") : "";
+    const info = connected.value ? normalizePrinterInfo(api.getPrinterInfo()) : undefined;
+    printerInfo.value = info;
+    printerName.value = info?.name ?? "";
+  }
+
+  /** Refreshes the printer capabilities and paper calibration values. */
+  async function refreshPrinterInfo(): Promise<PrinterInfo | undefined> {
+    const { api } = await getApi();
+    syncConnection(api);
+    return printerInfo.value;
   }
 
   /**
@@ -251,33 +308,83 @@ export function useBleLabelPrinter() {
         throw new Error("the printer rejected the print job");
       }
 
-      try {
-        for (const item of spec.items) {
-          await drawItem(lpapi, api, item);
-        }
-      } catch (err) {
-        api.abortJob();
-        throw err;
-      }
+      // The encoder's offset options are not consumed by this SDK version.
+      // DrawContext applies the offset before conversion to printer dots and
+      // also swaps the axes correctly for a rotated label. Reset a previous
+      // calibration when the next job does not request one.
+      const nextOffset = {
+        x: spec.horizontalOffset ?? 0,
+        y: spec.verticalOffset ?? 0,
+      };
+      setDrawingOffset(api, nextOffset.x, nextOffset.y);
 
-      assertOk(
-        lpapi,
-        await api.commitJob({
-          printCopies: copies,
-          gapType: spec.gapType,
-          gapLength: spec.gapLength,
-          printSpeed: spec.printSpeed,
-          printDarkness: spec.printDarkness,
-          threshold: spec.threshold,
-        })
-      );
+      try {
+        try {
+          for (const item of spec.items) {
+            await drawItem(lpapi, api, item);
+          }
+        } catch (err) {
+          api.abortJob();
+          throw err;
+        }
+
+        assertOk(
+          lpapi,
+          await api.commitJob({
+            printCopies: copies,
+            gapType: spec.gapType,
+            gapLength: spec.gapLength,
+            printSpeed: spec.printSpeed,
+            printDarkness: spec.printDarkness,
+            threshold: spec.threshold,
+            ...(spec.printAlignment === undefined ? {} : { printAlignment: spec.printAlignment }),
+            ...(spec.antiColor === undefined ? {} : { antiColor: spec.antiColor }),
+            ...(spec.horizontalFlip === undefined ? {} : { horizontalFlip: spec.horizontalFlip }),
+          })
+        );
+      } finally {
+        resetDrawingOffset(api);
+      }
     });
   }
 
   /** Prints a ready-made label image, for labels that carry no layout. */
-  function printBitmap(src: string, width: number, height: number, copies = 1): Promise<void> {
+  function printBitmap(
+    src: string,
+    width: number,
+    height: number,
+    copies = 1,
+    options: Partial<BleLabelSpecOverrides> = {}
+  ): Promise<void> {
     return withPrinter(async (lpapi, api) => {
-      assertOk(lpapi, await api.printImage({ src, width, height, copies }));
+      const x = options.horizontalOffset ?? 0;
+      const y = options.verticalOffset ?? 0;
+
+      try {
+        assertOk(
+          lpapi,
+          await api.printImage({
+            src,
+            width,
+            height,
+            copies,
+            gapType: options.gapType,
+            gapLength: options.gapLength,
+            printSpeed: options.printSpeed,
+            printDarkness: options.printDarkness,
+            ...(x === 0 && y === 0
+              ? {}
+              : {
+                  onJobCreated: async () => {
+                    setDrawingOffset(api, x, y);
+                    return true;
+                  },
+                }),
+          })
+        );
+      } finally {
+        resetDrawingOffset(api);
+      }
     });
   }
 
@@ -288,7 +395,11 @@ export function useBleLabelPrinter() {
    */
   async function printLabelUrl(
     url: string,
-    options: { copies?: number; fallback?: { width: number; height: number } } = {}
+    options: {
+      copies?: number;
+      fallback?: { width: number; height: number };
+      specOverrides?: Partial<BleLabelSpecOverrides>;
+    } = {}
   ): Promise<void> {
     const response = await fetch(url);
     if (!response.ok) {
@@ -299,7 +410,7 @@ export function useBleLabelPrinter() {
     const spec = await readLabelSpecFromPng(buffer);
 
     if (spec) {
-      await printSpec(spec, options.copies);
+      await printSpec({ ...spec, ...options.specOverrides }, options.copies);
       return;
     }
 
@@ -307,7 +418,13 @@ export function useBleLabelPrinter() {
       throw new Error("the label carries no layout and no paper size was given");
     }
 
-    await printBitmap(pngDataURL(buffer), options.fallback.width, options.fallback.height, options.copies);
+    await printBitmap(
+      pngDataURL(buffer),
+      options.fallback.width,
+      options.fallback.height,
+      options.copies,
+      options.specOverrides
+    );
   }
 
   async function disconnect(): Promise<void> {
@@ -324,8 +441,10 @@ export function useBleLabelPrinter() {
     available,
     connected,
     printerName,
+    printerInfo,
     busy,
     selectPrinter,
+    refreshPrinterInfo,
     printSpec,
     printBitmap,
     printLabelUrl,

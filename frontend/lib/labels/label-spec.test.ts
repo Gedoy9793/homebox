@@ -60,9 +60,29 @@ describe("parseLabelSpec", () => {
       printDarkness: 8,
       threshold: 192,
       items: [
-        { type: "text", text: "Drill", x: 20, y: 1, width: 19, fontHeight: 3.5, bold: true, align: "center" },
-        { type: "qrcode", text: "https://example.test/item/1", x: 1, y: 1, width: 18 },
-        { type: "barcode", text: "123456", barcodeType: "CODE128", textHeight: 3 },
+        {
+          type: "text",
+          text: "Drill",
+          x: 20,
+          y: 1,
+          width: 19,
+          fontHeight: 3.5,
+          bold: true,
+          align: "center",
+        },
+        {
+          type: "qrcode",
+          text: "https://example.test/item/1",
+          x: 1,
+          y: 1,
+          width: 18,
+        },
+        {
+          type: "barcode",
+          text: "123456",
+          barcodeType: "CODE128",
+          textHeight: 3,
+        },
         { type: "line", x1: 0, y1: 15, x2: 40, y2: 15, lineWidth: 0.3 },
         { type: "rect", x: 0, y: 0, width: 40, height: 30, cornerWidth: 1 },
         { type: "ellipse", x: 5, y: 5, width: 4, height: 4, fill: true },
@@ -83,6 +103,9 @@ describe("parseLabelSpec", () => {
     ]);
     expect(spec.rotation).toBe(90);
     expect(spec.gapLength).toBe(6);
+    expect(spec.printSpeed).toBe(3);
+    expect(spec.printDarkness).toBe(8);
+    expect(spec.threshold).toBe(192);
   });
 
   it("clamps the copy count into a printable range", () => {
@@ -97,15 +120,56 @@ describe("parseLabelSpec", () => {
     expect(() => parseLabelSpec({ width: 40, height: 999999, items: [] })).toThrow(/height/);
   });
 
+  it("validates printer paper modes and gap limits", () => {
+    expect(parseLabelSpec({ ...minimal, gapType: 0, gapLength: 0 })).toMatchObject({ gapType: 0, gapLength: 0 });
+    expect(parseLabelSpec({ ...minimal, gapType: 255 })).toMatchObject({
+      gapType: 255,
+    });
+    expect(() => parseLabelSpec({ ...minimal, gapType: 5 })).toThrow(/gapType/);
+    expect(() => parseLabelSpec({ ...minimal, gapLength: -0.1 })).toThrow(/gapLength/);
+    expect(() => parseLabelSpec({ ...minimal, gapLength: 163.84 })).toThrow(/gapLength/);
+  });
+
+  it("validates speed, darkness and raster thresholds", () => {
+    expect(
+      parseLabelSpec({
+        ...minimal,
+        printSpeed: 255,
+        printDarkness: 15,
+        threshold: 0,
+        items: [{ type: "image", src: "data:image/png;base64,AAAA", threshold: 255 }],
+      })
+    ).toMatchObject({ printSpeed: 255, printDarkness: 15, threshold: 0 });
+
+    expect(() => parseLabelSpec({ ...minimal, printSpeed: 0 })).toThrow(/printSpeed/);
+    expect(() => parseLabelSpec({ ...minimal, printSpeed: 2.5 })).toThrow(/printSpeed/);
+    expect(() => parseLabelSpec({ ...minimal, printDarkness: 16 })).toThrow(/printDarkness/);
+    expect(() => parseLabelSpec({ ...minimal, threshold: -1 })).toThrow(/threshold/);
+    expect(() =>
+      parseLabelSpec({
+        ...minimal,
+        items: [{ type: "image", src: "data:image/png;base64,AAAA", threshold: 256 }],
+      })
+    ).toThrow(/items\[0\]\.threshold/);
+  });
+
   it("names the offending item when it cannot be drawn", () => {
     expect(() => parseLabelSpec({ ...minimal, items: [{ type: "hologram" }] })).toThrow(/items\[0\]\.type/);
     expect(() => parseLabelSpec({ ...minimal, items: [{ type: "text" }] })).toThrow(/items\[0\]\.text/);
-    expect(() => parseLabelSpec({ ...minimal, items: [{ type: "text", text: "a", x: "1" }] })).toThrow(/items\[0\]\.x/);
+    expect(() =>
+      parseLabelSpec({
+        ...minimal,
+        items: [{ type: "text", text: "a", x: "1" }],
+      })
+    ).toThrow(/items\[0\]\.x/);
   });
 
   it("rejects cross-origin images, which would taint the print canvas", () => {
     expect(() =>
-      parseLabelSpec({ ...minimal, items: [{ type: "image", src: "https://cdn.example.test/logo.png" }] })
+      parseLabelSpec({
+        ...minimal,
+        items: [{ type: "image", src: "https://cdn.example.test/logo.png" }],
+      })
     ).toThrow(/same-origin/);
   });
 });
@@ -126,11 +190,17 @@ describe("readLabelSpecFromPng", () => {
       await deflate(JSON.stringify(minimal))
     );
 
-    expect(await readLabelSpecFromPng(png(compressed))).toMatchObject({ width: 40, height: 30 });
+    expect(await readLabelSpecFromPng(png(compressed))).toMatchObject({
+      width: 40,
+      height: 30,
+    });
   });
 
   it("reads a base64 layout from a Latin-1 only tEXt chunk", async () => {
-    const json = JSON.stringify({ ...minimal, items: [{ type: "text", text: "锤子" }] });
+    const json = JSON.stringify({
+      ...minimal,
+      items: [{ type: "text", text: "锤子" }],
+    });
     const encoded = btoa(String.fromCharCode(...new TextEncoder().encode(json)));
     const text = chunk("tEXt", ascii(LABEL_SPEC_KEYWORD), new Uint8Array([0]), ascii(encoded));
 
@@ -195,10 +265,23 @@ describe("the bundled label service", () => {
   it("emits a layout this parser accepts", () => {
     const spec = parseLabelSpec(emitted);
 
-    expect(spec).toMatchObject({ width: 25, height: 15, gapType: 2, gapLength: 6 });
+    expect(spec).toMatchObject({
+      width: 25,
+      height: 15,
+      gapType: 2,
+      gapLength: 6,
+    });
     expect(spec.items).toHaveLength(3);
-    expect(spec.items[0]).toMatchObject({ type: "qrcode", text: emitted.items[0].text });
-    expect(spec.items[1]).toMatchObject({ type: "text", text: "000-042", bold: true, fontHeight: 2.8 });
+    expect(spec.items[0]).toMatchObject({
+      type: "qrcode",
+      text: emitted.items[0]!.text,
+    });
+    expect(spec.items[1]).toMatchObject({
+      type: "text",
+      text: "000-042",
+      bold: true,
+      fontHeight: 2.8,
+    });
   });
 
   // Wrapping is resolved server-side into one item per line, so the printer must
@@ -221,7 +304,14 @@ describe("the bundled label service", () => {
       height: 25,
       rotation: 90,
       items: [
-        { type: "qrcode", x: 1, y: 1, width: 10.5, height: 10.5, text: "https://homebox.example.com/item/abc" },
+        {
+          type: "qrcode",
+          x: 1,
+          y: 1,
+          width: 10.5,
+          height: 10.5,
+          text: "https://homebox.example.com/item/abc",
+        },
         {
           type: "text",
           x: 12.7,

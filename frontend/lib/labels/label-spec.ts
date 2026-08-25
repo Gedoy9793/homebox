@@ -14,12 +14,14 @@ export const LABEL_SPEC_KEYWORD = "homebox:label";
 
 /** Largest label edge we accept, in millimetres. */
 const MAX_EDGE_MM = 2000;
+const MAX_GAP_MM = 163.83;
 const MAX_ITEMS = 200;
 const MAX_COPIES = 99;
 
 export type LabelAlignment = "start" | "center" | "end" | "stretch";
 export type LabelWrapMode = "none" | "char" | "word";
 export type LabelRotation = 0 | 90 | 180 | 270;
+export type LabelGapType = 0 | 1 | 2 | 3 | 4 | 255;
 
 export interface LabelItemBase {
   x?: number;
@@ -122,10 +124,20 @@ export interface LabelSpec {
   /** Label height in millimetres. */
   height: number;
   rotation?: LabelRotation;
-  /** Paper type: 0 continuous, 2 gap, 3 black mark, 4 transparent, 255 printer default. */
-  gapType?: number;
+  /** Paper type: 0 continuous, 1 positioning hole, 2 gap, 3 black mark, 4 transparent, 255 printer default. */
+  gapType?: LabelGapType;
   /** Physical gap between die-cut labels, in millimetres. */
   gapLength?: number;
+  /** Print alignment when the job is wider than the print head: 0 left, 1 center, 2 right. */
+  printAlignment?: 0 | 1 | 2;
+  /** Drawing offset in millimetres. Applied through DrawContext.setOffset. */
+  horizontalOffset?: number;
+  /** Drawing offset in millimetres. Applied through DrawContext.setOffset. */
+  verticalOffset?: number;
+  /** Invert the output. */
+  antiColor?: boolean;
+  /** Mirror the output horizontally. */
+  horizontalFlip?: boolean;
   /** 1 (slowest) to 5 (fastest), 255 for the printer default. */
   printSpeed?: number;
   /** 1 (lightest) to 15 (darkest), 255 for the printer default. */
@@ -155,6 +167,69 @@ function optionalNumber(value: unknown, where: string): number | undefined {
     fail(`${where} must be a number`);
   }
   return value;
+}
+
+/** Parses a finite millimetre value while keeping untrusted layouts bounded. */
+function millimetres(value: unknown, where: string, allowNegative = false): number | undefined {
+  const parsed = optionalNumber(value, where);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  if (parsed < (allowNegative ? -MAX_EDGE_MM : 0) || parsed > MAX_EDGE_MM) {
+    fail(`${where} must be between ${allowNegative ? -MAX_EDGE_MM : 0} and ${MAX_EDGE_MM} millimetres`);
+  }
+  return parsed;
+}
+
+function gapType(value: unknown, where: string): LabelGapType | undefined {
+  const parsed = optionalNumber(value, where);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  if (parsed !== 0 && parsed !== 1 && parsed !== 2 && parsed !== 3 && parsed !== 4 && parsed !== 255) {
+    fail(`${where} must be 0, 1, 2, 3, 4 or 255`);
+  }
+  return parsed;
+}
+
+function gapLength(value: unknown, where: string): number | undefined {
+  const parsed = optionalNumber(value, where);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  if (parsed < 0 || parsed > MAX_GAP_MM) {
+    fail(`${where} must be between 0 and ${MAX_GAP_MM} millimetres`);
+  }
+  return parsed;
+}
+
+function printAlignment(value: unknown, where: string): 0 | 1 | 2 | undefined {
+  const parsed = optionalNumber(value, where);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  if (parsed !== 0 && parsed !== 1 && parsed !== 2) {
+    fail(`${where} must be 0, 1 or 2`);
+  }
+  return parsed;
+}
+
+function integerSetting(
+  value: unknown,
+  where: string,
+  min: number,
+  max: number,
+  allowPrinterDefault = false
+): number | undefined {
+  const parsed = optionalNumber(value, where);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const inRange = Number.isInteger(parsed) && parsed >= min && parsed <= max;
+  if (!inRange && !(allowPrinterDefault && parsed === 255)) {
+    fail(`${where} must be an integer between ${min} and ${max}${allowPrinterDefault ? ", or 255" : ""}`);
+  }
+  return parsed;
 }
 
 function edge(value: unknown, where: string): number {
@@ -344,7 +419,7 @@ function parseItem(value: unknown, index: number): LabelItem {
         ...base,
         type: "image",
         src: imageSource(raw.src, `${where}.src`),
-        threshold: optionalNumber(raw.threshold, `${where}.threshold`),
+        threshold: integerSetting(raw.threshold, `${where}.threshold`, 0, 255),
       };
 
     default:
@@ -368,11 +443,16 @@ export function parseLabelSpec(value: unknown): LabelSpec {
     width: edge(raw.width, "width"),
     height: edge(raw.height, "height"),
     rotation: rotation(raw.rotation, "rotation"),
-    gapType: optionalNumber(raw.gapType, "gapType"),
-    gapLength: optionalNumber(raw.gapLength, "gapLength"),
-    printSpeed: optionalNumber(raw.printSpeed, "printSpeed"),
-    printDarkness: optionalNumber(raw.printDarkness, "printDarkness"),
-    threshold: optionalNumber(raw.threshold, "threshold"),
+    gapType: gapType(raw.gapType, "gapType"),
+    gapLength: gapLength(raw.gapLength, "gapLength"),
+    printAlignment: printAlignment(raw.printAlignment, "printAlignment"),
+    horizontalOffset: millimetres(raw.horizontalOffset, "horizontalOffset", true),
+    verticalOffset: millimetres(raw.verticalOffset, "verticalOffset", true),
+    antiColor: optionalBoolean(raw.antiColor, "antiColor"),
+    horizontalFlip: optionalBoolean(raw.horizontalFlip, "horizontalFlip"),
+    printSpeed: integerSetting(raw.printSpeed, "printSpeed", 1, 5, true),
+    printDarkness: integerSetting(raw.printDarkness, "printDarkness", 1, 15, true),
+    threshold: integerSetting(raw.threshold, "threshold", 0, 255),
     copies: copies === undefined ? undefined : Math.min(Math.max(Math.round(copies), 1), MAX_COPIES),
     items: raw.items.map(parseItem),
   };
