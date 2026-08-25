@@ -27,6 +27,7 @@
 
   const { t } = useI18n();
   const { closeDialog, openDialog } = useDialog();
+  const { scanWithWeChatOrFallback } = useAppScanner();
 
   useDialogHotkey(DialogID.QuickMenu, { code: "Backquote", ctrl: true });
 </script>
@@ -97,7 +98,7 @@
           @select="
             () => {
               closeDialog(DialogID.QuickMenu);
-              openDialog(DialogID.Scanner);
+              void scanWithWeChatOrFallback(() => openDialog(DialogID.Scanner));
             }
           "
         >

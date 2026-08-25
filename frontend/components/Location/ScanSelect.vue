@@ -7,7 +7,14 @@
   import { BrowserMultiFormatReader, NotFoundException } from "@zxing/library";
   import { useI18n } from "vue-i18n";
   import { locationIdFromUrl } from "~~/lib/labels/label-url";
+  import {
+    isWeChatBrowser,
+    isWeChatScanCancelled,
+    normalizeWeChatScanResult,
+    scanQRCodeInWeChat,
+  } from "~~/lib/wechat-scan";
   import { Button } from "~/components/ui/button";
+  import { toast } from "@/components/ui/sonner";
   import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
   import MdiQrcodeScan from "~icons/mdi/qrcode-scan";
@@ -44,6 +51,29 @@
 
   async function start(): Promise<void> {
     error.value = "";
+
+    if (isWeChatBrowser()) {
+      try {
+        const text = normalizeWeChatScanResult(await scanQRCodeInWeChat());
+        const id = locationIdFromUrl(text);
+        if (!id) {
+          toast.error(t("components.location.selector.scan_not_a_location"));
+          return;
+        }
+        emit("scanned", id);
+        return;
+      } catch (err) {
+        if (isWeChatScanCancelled(err)) {
+          return;
+        }
+        console.warn("WeChat scan unavailable, falling back to the in-app camera", err);
+      }
+    }
+
+    await startCamera();
+  }
+
+  async function startCamera(): Promise<void> {
     scanning.value = true;
 
     if (!navigator?.mediaDevices) {

@@ -270,6 +270,7 @@
 
   const { t } = useI18n();
   const { openDialog, closeDialog, registerOpenDialogCallback } = useDialog();
+  const { scanWithWeChatOrFallback } = useAppScanner();
 
   useDialogHotkey(DialogID.CreateEntity, { code: "Digit1", shift: true }, () => ({
     baseType: "item",
@@ -742,7 +743,7 @@
   }
 
   function openQrScannerPage() {
-    openDialog(DialogID.Scanner);
+    void scanWithWeChatOrFallback(() => openDialog(DialogID.Scanner));
   }
 
   function openBarcodeDialog() {

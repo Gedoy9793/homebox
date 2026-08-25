@@ -67,6 +67,7 @@
   import MdiAlertCircleOutline from "~icons/mdi/alert-circle-outline";
   import MdiCameraOutline from "~icons/mdi/camera-outline";
   import { useDialog } from "@/components/ui/dialog-provider";
+  import { homeboxPathFromScanText } from "~~/lib/scan-result";
 
   const { t } = useI18n();
   const { activeDialog, openDialog, closeDialog } = useDialog();
@@ -175,34 +176,27 @@
       await codeReader.decodeFromVideoDevice(newSource, video.value!, (result, err) => {
         if (result && !loading.value) {
           loading.value = true;
-          try {
-            const url = new URL(result.getText());
-            if (!url.pathname.startsWith("/")) {
-              throw new Error(t("scanner.invalid_url"));
-            }
-            const sanitizedPath = url.pathname.replace(/[^a-zA-Z0-9-_/]/g, "");
+          const text = result.getText();
+          const path = homeboxPathFromScanText(text);
+          if (path) {
             closeDialog(DialogID.Scanner);
-            navigateTo(sanitizedPath);
-          } catch (err) {
-            // Check if it's a barcode for a new element
-            const bcfmt = result.getBarcodeFormat();
-
-            switch (bcfmt) {
-              case BarcodeFormat.EAN_13:
-              case BarcodeFormat.UPC_A:
-              case BarcodeFormat.UPC_E:
-              case BarcodeFormat.UPC_EAN_EXTENSION:
-                console.info("Barcode detected");
-                detectedBarcode.value = result.getText();
-                detectedBarcodeType.value = BarcodeFormat[bcfmt].replaceAll("_", "-");
-                break;
-
-              default:
-                handleError(err);
-            }
-
-            loading.value = false;
+            navigateTo(path);
+            return;
           }
+
+          const bcfmt = result.getBarcodeFormat();
+          switch (bcfmt) {
+            case BarcodeFormat.EAN_13:
+            case BarcodeFormat.UPC_A:
+            case BarcodeFormat.UPC_E:
+            case BarcodeFormat.UPC_EAN_EXTENSION:
+              detectedBarcode.value = text;
+              detectedBarcodeType.value = BarcodeFormat[bcfmt].replaceAll("_", "-");
+              break;
+            default:
+              handleError(new Error(t("scanner.invalid_url")));
+          }
+          loading.value = false;
         }
         if (err && !(err instanceof NotFoundException)) {
           console.error(err);

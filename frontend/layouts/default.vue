@@ -143,7 +143,7 @@
                     'text-nowrap': typeof locale === 'string' && locale.startsWith('zh-'),
                   }"
                   :tooltip="$t('menu.scanner')"
-                  @click.prevent="openDialog(DialogID.Scanner)"
+                  @click.prevent="openScanner"
                 >
                   <MdiQrcodeScan />
                   <span>{{ $t("menu.scanner") }}</span>
@@ -325,6 +325,7 @@
   const username = computed(() => authCtx.user?.name || "User");
 
   const { openDialog } = useDialog();
+  const { scanWithWeChatOrFallback } = useAppScanner();
 
   const preferences = useViewPreferences();
 
@@ -371,7 +372,7 @@
     }
   };
 
-  const openScanner = () => openCameraDialog(DialogID.Scanner);
+  const openScanner = () => scanWithWeChatOrFallback(() => openCameraDialog(DialogID.Scanner));
   const openImageSearch = () => openCameraDialog(DialogID.ImageSearch);
 
   // Preload currency format
