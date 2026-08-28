@@ -1,57 +1,61 @@
 <template>
   <AlertDialog :open="open" @update:open="onOpenChange">
-    <AlertDialogContent class="flex max-h-[90vh] flex-col gap-4 overflow-hidden sm:max-w-lg">
-      <AlertDialogHeader>
-        <AlertDialogTitle>{{ t("components.form.camera_capture.title") }}</AlertDialogTitle>
-        <AlertDialogDescription>
-          {{ t("components.form.camera_capture.description") }}
-        </AlertDialogDescription>
-      </AlertDialogHeader>
+    <AlertDialogContent class="flex max-h-[min(90dvh,90vh)] w-full max-w-lg flex-col gap-0 overflow-hidden p-0 sm:rounded-lg">
+      <div class="shrink-0 space-y-4 px-6 pt-6 pb-4">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{{ t("components.form.camera_capture.title") }}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {{ t("components.form.camera_capture.description") }}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
 
-      <div
-        v-if="errorMessage"
-        class="flex items-center gap-2 rounded-md border border-destructive bg-destructive/10 p-3 text-destructive"
-        role="alert"
-      >
-        <MdiAlertCircleOutline class="shrink-0" />
-        <span class="text-sm font-medium">{{ errorMessage }}</span>
-      </div>
-
-      <video
-        ref="video"
-        class="aspect-video w-full rounded-lg bg-muted shadow"
-        poster="data:image/gif,AAAA"
-        muted
-        playsinline
-      />
-
-      <Select v-model="selectedSource">
-        <SelectTrigger class="w-full">
-          <SelectValue :placeholder="t('scanner.select_video_source')" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem v-for="source in sources" :key="source.deviceId" :value="source.deviceId">
-            {{ source.label }}
-          </SelectItem>
-        </SelectContent>
-      </Select>
-
-      <div v-if="shots.length > 0" class="flex gap-2 overflow-x-auto pb-1">
-        <div v-for="(shot, i) in shots" :key="i" class="relative shrink-0">
-          <img :src="shot.previewUrl" class="h-16 w-16 rounded object-cover" alt="" />
-          <Button
-            type="button"
-            size="icon"
-            variant="destructive"
-            class="absolute -right-1 -top-1 size-5"
-            @click="removeShot(i)"
-          >
-            <MdiClose class="size-3" />
-          </Button>
+        <div
+          v-if="errorMessage"
+          class="flex items-center gap-2 rounded-md border border-destructive bg-destructive/10 p-3 text-destructive"
+          role="alert"
+        >
+          <MdiAlertCircleOutline class="shrink-0" />
+          <span class="text-sm font-medium">{{ errorMessage }}</span>
         </div>
       </div>
 
-      <AlertDialogFooter class="gap-2 sm:justify-between">
+      <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pb-4">
+        <video
+          ref="video"
+          class="aspect-video max-h-[min(42dvh,42vh)] w-full rounded-lg bg-muted object-cover shadow"
+          poster="data:image/gif,AAAA"
+          muted
+          playsinline
+        />
+
+        <Select v-model="selectedSource">
+          <SelectTrigger class="w-full">
+            <SelectValue :placeholder="t('scanner.select_video_source')" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="source in sources" :key="source.deviceId" :value="source.deviceId">
+              {{ source.label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        <div v-if="shots.length > 0" class="flex gap-2 overflow-x-auto pb-1">
+          <div v-for="(shot, i) in shots" :key="i" class="relative shrink-0">
+            <img :src="shot.previewUrl" class="h-16 w-16 rounded object-cover" alt="" />
+            <Button
+              type="button"
+              size="icon"
+              variant="destructive"
+              class="absolute -right-1 -top-1 size-5"
+              @click="removeShot(i)"
+            >
+              <MdiClose class="size-3" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <AlertDialogFooter class="shrink-0 gap-2 border-t bg-background px-6 py-4 sm:justify-between">
         <Button type="button" variant="outline" :disabled="!cameraReady || capturing" @click="capture">
           <MdiCamera class="mr-2" />
           {{ t("components.form.camera_capture.capture") }}

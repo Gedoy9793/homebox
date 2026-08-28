@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { locationIdFromUrl } from "./label-url";
+import { describe, expect, it, vi } from "vitest";
+import { locationIdFromUrl, resolveLocationIdFromScanText } from "./label-url";
 
 const uuid = "0198f0a1-0000-7000-8000-000000000001";
 
@@ -28,5 +28,31 @@ describe("locationIdFromUrl", () => {
     for (const text of others) {
       expect(locationIdFromUrl(text), text).toBeUndefined();
     }
+  });
+});
+
+describe("resolveLocationIdFromScanText", () => {
+  it("keeps direct location URLs", async () => {
+    const id = await resolveLocationIdFromScanText(`https://homebox.example.com/location/${uuid}`, async () => undefined);
+    expect(id).toBe(uuid);
+  });
+
+  it("resolves location asset labels through the lookup callback", async () => {
+    const lookup = vi.fn(async (assetId: string) => {
+      expect(assetId).toBe("000-042");
+      return { id: uuid, isLocation: true };
+    });
+
+    const id = await resolveLocationIdFromScanText("https://homebox.example.com/a/000-042", lookup);
+    expect(id).toBe(uuid);
+    expect(lookup).toHaveBeenCalledOnce();
+  });
+
+  it("ignores asset labels that point at items", async () => {
+    const id = await resolveLocationIdFromScanText(
+      "https://homebox.example.com/a/000-042",
+      async () => ({ id: uuid, isLocation: false })
+    );
+    expect(id).toBeUndefined();
   });
 });

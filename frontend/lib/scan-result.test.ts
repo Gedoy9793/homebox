@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeboxPathFromScanText, productBarcodeFromScanText } from "./scan-result";
+import { assetIdFromScanText, homeboxPathFromScanText, productBarcodeFromScanText } from "./scan-result";
 
 describe("homeboxPathFromScanText", () => {
   it("keeps Homebox label paths", () => {
@@ -14,6 +14,20 @@ describe("homeboxPathFromScanText", () => {
     expect(homeboxPathFromScanText("")).toBeUndefined();
     expect(homeboxPathFromScanText("8801073141735")).toBeUndefined();
     expect(homeboxPathFromScanText("not a url")).toBeUndefined();
+  });
+});
+
+describe("assetIdFromScanText", () => {
+  it("reads the printed asset id from label URLs", () => {
+    expect(assetIdFromScanText("https://homebox.example.com/a/000-042")).toBe("000-042");
+    expect(assetIdFromScanText("/a/000-007/")).toBe("000-007");
+  });
+
+  it("ignores item and location URLs", () => {
+    const uuid = "0198f0a1-0000-7000-8000-000000000001";
+    expect(assetIdFromScanText(`https://homebox.example.com/location/${uuid}`)).toBeUndefined();
+    expect(assetIdFromScanText(`https://homebox.example.com/item/${uuid}`)).toBeUndefined();
+    expect(assetIdFromScanText("8801073141735")).toBeUndefined();
   });
 });
 

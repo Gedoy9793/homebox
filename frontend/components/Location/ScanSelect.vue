@@ -6,7 +6,7 @@
   // result back to whoever opened it. This one stays inline and reports the id.
   import { BrowserMultiFormatReader, NotFoundException } from "@zxing/library";
   import { useI18n } from "vue-i18n";
-  import { locationIdFromUrl } from "~~/lib/labels/label-url";
+  import { resolveLocationIdFromScanText } from "~~/lib/labels/label-url";
   import {
     isWeChatBrowser,
     isWeChatScanCancelled,
@@ -22,6 +22,7 @@
   const emit = defineEmits<{ scanned: [id: string] }>();
 
   const { t } = useI18n();
+  const api = useUserApi();
 
   // Shared with the global scanner, so picking a camera once is enough.
   const LAST_USED_DEVICE_ID_KEY = "homebox:lastUsedDeviceId";
@@ -33,6 +34,39 @@
   const error = ref("");
 
   let reader: BrowserMultiFormatReader | undefined;
+
+  async function lookupLocationFromScan(text: string): Promise<string | undefined> {
+    return resolveLocationIdFromScanText(text, async assetId => {
+      const { data } = await api.assets.get(assetId);
+      if (!data || data.total !== 1) {
+        return undefined;
+      }
+
+      const entity = data.items[0];
+      if (!entity?.entityType?.isLocation) {
+        return undefined;
+      }
+
+      return { id: entity.id, isLocation: true };
+    });
+  }
+
+  async function handleScannedText(text: string, notifyWithToast = false): Promise<boolean> {
+    const id = await lookupLocationFromScan(text);
+    if (!id) {
+      const message = t("components.location.selector.scan_not_a_location");
+      if (notifyWithToast) {
+        toast.error(message);
+      } else {
+        error.value = message;
+      }
+      return false;
+    }
+
+    stop();
+    emit("scanned", id);
+    return true;
+  }
 
   function preferredCamera(devices: MediaDeviceInfo[]): string | undefined {
     let remembered: string | null = null;
@@ -55,12 +89,7 @@
     if (isWeChatBrowser()) {
       try {
         const text = normalizeWeChatScanResult(await scanQRCodeInWeChat());
-        const id = locationIdFromUrl(text);
-        if (!id) {
-          toast.error(t("components.location.selector.scan_not_a_location"));
-          return;
-        }
-        emit("scanned", id);
+        await handleScannedText(text, true);
         return;
       } catch (err) {
         if (isWeChatScanCancelled(err)) {
@@ -130,15 +159,10 @@
     try {
       await reader?.decodeFromVideoDevice(source, video.value, (result, err) => {
         if (result) {
-          const id = locationIdFromUrl(result.getText());
-          if (!id) {
-            // Keep the camera running: they may just have caught the wrong label.
-            error.value = t("components.location.selector.scan_not_a_location");
-            return;
-          }
-
-          stop();
-          emit("scanned", id);
+          void handleScannedText(result.getText()).catch(scanErr => {
+            console.error(scanErr);
+            error.value = t("scanner.error");
+          });
           return;
         }
 

@@ -5,6 +5,7 @@
 // reach into that component.
 
 import { type QueryValue, route } from "../api/base/urls";
+import { assetIdFromScanText } from "../scan-result";
 
 /** Which label endpoint to use. "item" and "entity" are the same thing. */
 export type LabelKind = "item" | "entity" | "location" | "asset";
@@ -27,6 +28,29 @@ export function locationIdFromUrl(text: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Resolves a scanned location label to the location's entity id. Location labels
+ * encode `/a/000-042` in the QR, not `/location/<uuid>`, so asset lookups are
+ * needed for those codes.
+ */
+export async function resolveLocationIdFromScanText(
+  text: string,
+  lookupByAssetId: (assetId: string) => Promise<{ id: string; isLocation: boolean } | undefined>
+): Promise<string | undefined> {
+  const direct = locationIdFromUrl(text);
+  if (direct) {
+    return direct;
+  }
+
+  const assetId = assetIdFromScanText(text);
+  if (!assetId) {
+    return undefined;
+  }
+
+  const entity = await lookupByAssetId(assetId);
+  return entity?.isLocation ? entity.id : undefined;
 }
 
 export function labelUrl(kind: LabelKind, id: string, options: { print?: boolean; tenant?: string } = {}): string {

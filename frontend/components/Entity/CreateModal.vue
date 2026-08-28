@@ -433,7 +433,7 @@
     toast.success(t("components.template.toast.applied", { name: data.name }));
   }
 
-  async function restoreLastTemplate() {
+  async function restoreLastTemplate(options?: { preserveTags?: boolean }) {
     const lastTemplateId = localStorage.getItem(LAST_TEMPLATE_KEY);
     if (!lastTemplateId) return;
 
@@ -465,7 +465,7 @@
       }
     }
     // Pre-fill tags from template
-    if (data.defaultTags && data.defaultTags.length > 0) {
+    if (!options?.preserveTags && data.defaultTags && data.defaultTags.length > 0) {
       form.tags = data.defaultTags.map(l => l.id);
     }
   }
@@ -719,7 +719,9 @@
     form.manufacturer = "";
     form.modelNumber = "";
     form.photos = [];
-    form.tags = [];
+    if (close) {
+      form.tags = [];
+    }
     selectedTemplate.value = null;
     templateData.value = null;
     templateUserSelected.value = false;
@@ -738,7 +740,7 @@
       // "Create and Add Another" keeps the dialog open, so the open-dialog
       // callback (which normally restores the persisted template) never
       // fires — re-apply it here so the selection isn't cleared (#1489).
-      await restoreLastTemplate();
+      await restoreLastTemplate({ preserveTags: true });
     }
   }
 

@@ -29,7 +29,9 @@
         navigateTo("/home");
         break;
       case 1:
-        navigateTo(`/item/${data.items[0]!.id}`, { replace: true, redirectCode: 302 });
+        const entity = data.items[0]!;
+        const path = entity.entityType?.isLocation ? `/location/${entity.id}` : `/item/${entity.id}`;
+        navigateTo(path, { replace: true, redirectCode: 302 });
         break;
       default:
         return data.items;

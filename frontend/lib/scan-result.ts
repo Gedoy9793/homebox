@@ -23,6 +23,17 @@ export function homeboxPathFromScanText(text: string): string | undefined {
   return sanitized || undefined;
 }
 
+/** Asset label URLs use `/a/000-042` so the QR matches the printed number. */
+export function assetIdFromScanText(text: string): string | undefined {
+  const path = homeboxPathFromScanText(text);
+  if (!path) {
+    return undefined;
+  }
+
+  const match = /^\/a\/(\d{3}-\d{3})\/?$/i.exec(path);
+  return match?.[1];
+}
+
 /** Product barcodes the import dialog can look up. */
 export function productBarcodeFromScanText(text: string): string | undefined {
   const trimmed = text.trim();
