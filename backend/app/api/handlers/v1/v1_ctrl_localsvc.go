@@ -12,7 +12,7 @@ import (
 //
 // This is deliberately the only file involved: the label service is selected
 // through the environment, which config.New reads later on in main, and the
-// barcode service is appended to the list of Open Facts style sources that
+// barcode service is prepended to the list of Open Facts style sources that
 // HandleProductSearchFromBarcode already walks. Nothing has to be added to the
 // handler itself, which keeps this fork's diff against upstream near zero.
 //
@@ -23,10 +23,10 @@ func init() {
 		return
 	}
 
-	openFactsSources = append(openFactsSources, openFactsSource{
+	openFactsSources = append([]openFactsSource{{
 		Name:    localsvc.BarcodeSourceName,
 		BaseURL: base,
-	})
+	}}, openFactsSources...)
 }
 
 // isLoopbackImageURL reports whether an image lives on the bundled service.

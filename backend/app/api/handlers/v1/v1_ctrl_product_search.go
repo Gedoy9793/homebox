@@ -18,6 +18,7 @@ import (
 	"github.com/sysadminsmedia/homebox/backend/internal/data/repo"
 	"github.com/sysadminsmedia/homebox/backend/internal/sys/config"
 	"github.com/sysadminsmedia/homebox/backend/internal/web/adapters"
+	"github.com/sysadminsmedia/homebox/backend/localsvc"
 )
 
 const (
@@ -417,6 +418,42 @@ func lookupOpenFacts(contact string, source openFactsSource, iEan string) ([]rep
 	return []repo.BarcodeProduct{p}, nil
 }
 
+func lookupAliyunSource(ean string, contact string) ([]repo.BarcodeProduct, error) {
+	for _, source := range openFactsSources {
+		if source.Name != localsvc.BarcodeSourceName {
+			continue
+		}
+
+		return lookupOpenFacts(contact, source, ean)
+	}
+
+	return nil, nil
+}
+
+func enrichBarcodeProductImages(products []repo.BarcodeProduct) {
+	for i := range products {
+		p := &products[i]
+
+		if len(p.ImageURL) == 0 {
+			continue
+		}
+
+		// Validate URL is HTTPS
+		u, err := url.Parse(p.ImageURL)
+		if err != nil || (u.Scheme != schemeHTTPS && !isLoopbackImageURL(u)) {
+			log.Warn().Msg("Skipping non-HTTPS image URL: " + p.ImageURL)
+			continue
+		}
+
+		base64Img, err := fetchImageBase64(p.ImageURL)
+		if err != nil {
+			log.Warn().Msg("Cannot fetch image for URL: " + p.ImageURL + ": " + err.Error())
+			continue
+		}
+		p.ImageBase64 = base64Img
+	}
+}
+
 // fetchImageBase64 fetches an image from the given HTTPS URL and returns it as a base64-encoded data URI.
 func fetchImageBase64(imageURL string) (string, error) {
 	client := &http.Client{Timeout: barcodeHTTPTimeoutSec * time.Second}
@@ -482,7 +519,16 @@ func (ctrl *V1Controller) HandleProductSearchFromBarcode(conf config.BarcodeAPIC
 
 		var products []repo.BarcodeProduct
 
-		// www.ean-search.org/: not free
+		// Prefer the Alibaba Cloud product database when it is configured.
+		psAliyun, err := lookupAliyunSource(q.EAN, conf.OpenFoodFactsContact)
+		if err != nil {
+			log.Error().Msg("Can not retrieve product from " + localsvc.BarcodeSourceName + ": " + err.Error())
+		}
+		if len(psAliyun) > 0 {
+			products = psAliyun
+			enrichBarcodeProductImages(products)
+			return server.JSON(w, http.StatusOK, products)
+		}
 
 		// Example code: dewalt 5035048748428
 
@@ -501,6 +547,10 @@ func (ctrl *V1Controller) HandleProductSearchFromBarcode(conf config.BarcodeAPIC
 		}
 
 		for _, source := range openFactsSources {
+			if source.Name == localsvc.BarcodeSourceName {
+				continue
+			}
+
 			ps3, err := lookupOpenFacts(conf.OpenFoodFactsContact, source, q.EAN)
 			if err != nil {
 				log.Error().Msg("Can not retrieve product from " + source.Name + ": " + err.Error())
@@ -508,28 +558,7 @@ func (ctrl *V1Controller) HandleProductSearchFromBarcode(conf config.BarcodeAPIC
 			products = append(products, ps3...)
 		}
 
-		// Retrieve images if possible
-		for i := range products {
-			p := &products[i]
-
-			if len(p.ImageURL) == 0 {
-				continue
-			}
-
-			// Validate URL is HTTPS
-			u, err := url.Parse(p.ImageURL)
-			if err != nil || (u.Scheme != schemeHTTPS && !isLoopbackImageURL(u)) {
-				log.Warn().Msg("Skipping non-HTTPS image URL: " + p.ImageURL)
-				continue
-			}
-
-			base64Img, err := fetchImageBase64(p.ImageURL)
-			if err != nil {
-				log.Warn().Msg("Cannot fetch image for URL: " + p.ImageURL + ": " + err.Error())
-				continue
-			}
-			p.ImageBase64 = base64Img
-		}
+		enrichBarcodeProductImages(products)
 
 		if len(products) != 0 {
 			return server.JSON(w, http.StatusOK, products)

@@ -17,12 +17,12 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// The provider bills per call, including the "no data" reply, so results are
-// cached in a local JSON file — a negative result is cached too, otherwise
-// repeatedly scanning an unknown barcode keeps costing money. Entries are keyed
-// by barcode inside one file, which avoids deriving file names from request
-// input; the volume involved (a home inventory) is far too small for the
-// read-modify-write cost to matter next to a network call.
+// Successful lookups are cached in a local JSON file so repeat scans of the
+// same barcode do not call the paid API again. "No data" replies are not
+// cached, so a later scan can retry in case the catalog was updated. Entries
+// are keyed by barcode inside one file, which avoids deriving file names from
+// request input; the volume involved (a home inventory) is far too small for
+// the read-modify-write cost to matter next to a network call.
 //
 // Product images are stored as separate files next to that JSON, because the
 // image URLs the provider returns expire after ten days — by which time the
@@ -53,9 +53,8 @@ var cacheMu sync.Mutex
 type cacheEntry struct {
 	CachedAt time.Time `json:"cachedAt"`
 
-	// Products is empty for a barcode the API has no data for. The presence of
-	// the entry is what marks a cache hit, so an empty list still prevents a
-	// billed call.
+	// Products holds the cached hit. Entries with an empty list are ignored on
+	// read so legacy negative-cache rows do not block retries.
 	Products []barcodeProduct `json:"products"`
 
 	// ImageFile names the cached image inside the image directory. The API
@@ -271,8 +270,7 @@ func readImage(path string, name string) (mime string, raw []byte, err error) {
 	return mime, raw, nil
 }
 
-// cacheLookup reports whether the barcode has already been queried. The second
-// return value distinguishes a cached "no data" result from a miss.
+// cacheLookup reports whether a successful lookup for the barcode is cached.
 func cacheLookup(barcode string) (entry cacheEntry, hit bool) {
 	if cacheDisabled() {
 		return cacheEntry{}, false
@@ -282,7 +280,7 @@ func cacheLookup(barcode string) (entry cacheEntry, hit bool) {
 	defer cacheMu.Unlock()
 
 	entry, ok := readCache(cachePath()).Entries[barcode]
-	if !ok {
+	if !ok || len(entry.Products) == 0 {
 		return cacheEntry{}, false
 	}
 
@@ -298,9 +296,11 @@ func cacheLookup(barcode string) (entry cacheEntry, hit bool) {
 // lookup.
 func cacheStore(barcode string, product *barcodeProduct) cacheEntry {
 	entry := cacheEntry{CachedAt: time.Now().UTC()}
-	if product != nil {
-		entry.Products = []barcodeProduct{*product}
+	if product == nil {
+		return entry
 	}
+
+	entry.Products = []barcodeProduct{*product}
 
 	if cacheDisabled() {
 		return entry

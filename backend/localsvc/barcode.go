@@ -21,8 +21,8 @@ import (
 // API, which upstream already knows how to read, so it joins the other barcode
 // sources through configuration rather than through a code change.
 //
-// Because the provider bills per call, results are cached locally — including
-// the "no data" reply, which is billed too. See barcode_cache.go.
+// Successful lookups are cached locally; "no data" replies are not. See
+// barcode_cache.go.
 
 const (
 	// EnvAppCode holds the Alibaba Cloud Marketplace APPCODE. Without it the

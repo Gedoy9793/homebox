@@ -106,6 +106,11 @@ func resolveBarcode(barcode string) (cacheEntry, bool) {
 		return cacheEntry{}, false
 	}
 
+	if product == nil {
+		// Billed by the provider, but not cached — the next scan should retry.
+		return cacheEntry{}, false
+	}
+
 	return cacheStore(barcode, product), true
 }
 

@@ -285,21 +285,22 @@ func TestCacheServesSecondLookupFromDisk(t *testing.T) {
 	}
 }
 
-// A "no data" reply is billed by the provider, so it must not be requested twice.
-func TestCacheStoresNoDataResult(t *testing.T) {
+// A "no data" reply is billed by the provider but is not cached, so each scan
+// retries until a product is found or the operator stops scanning.
+func TestCacheDoesNotStoreNoDataResult(t *testing.T) {
 	calls := countingServer(t, `{"code":201,"msg":"查无数据"}`)
 	withTestCache(t)
 	t.Setenv(EnvAppCode, "code")
 
 	for range 2 {
 		entry, ok := resolveBarcode("0000000000000")
-		if !ok || len(entry.Products) != 0 {
-			t.Fatalf("expected a cached empty answer, got %+v", entry)
+		if ok || len(entry.Products) != 0 {
+			t.Fatalf("expected no cached answer for no-data, got ok=%v entry=%+v", ok, entry)
 		}
 	}
 
-	if *calls != 1 {
-		t.Fatalf("expected the negative result to be cached, got %d API calls", *calls)
+	if *calls != 2 {
+		t.Fatalf("expected no-data lookups not to be cached, got %d API calls", *calls)
 	}
 }
 
@@ -598,14 +599,14 @@ func TestCacheKeepsUnrelatedEntries(t *testing.T) {
 	cacheStore("222", nil)
 
 	cache := readCache(path)
-	if len(cache.Entries) != 2 {
-		t.Fatalf("expected 2 entries, got %d", len(cache.Entries))
+	if len(cache.Entries) != 1 {
+		t.Fatalf("expected only successful lookups to be cached, got %d entries", len(cache.Entries))
 	}
 	if got := cache.Entries["111"].Products[0].Item.Name; got != "first" {
 		t.Fatalf("unexpected cached name %q", got)
 	}
-	if _, ok := cache.Entries["222"]; !ok {
-		t.Fatal("expected the negative entry to be kept")
+	if _, ok := cache.Entries["222"]; ok {
+		t.Fatal("expected no-data lookups not to be written to the cache file")
 	}
 }
 
