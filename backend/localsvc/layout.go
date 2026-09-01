@@ -96,7 +96,10 @@ func formatTags(tags []string) string {
 func buildSpec(req labelRequest, prof profile) (labelSpec, error) {
 	set := loadedFonts()
 
-	titleFace, err := newFace(set.bold, prof.titleMM*measureScale)
+	primary, _ := headline(req)
+	titleMM := titleSizeMM(prof, primary)
+
+	titleFace, err := newFace(set.bold, titleMM*measureScale)
 	if err != nil {
 		return labelSpec{}, err
 	}
@@ -147,11 +150,22 @@ func buildSpec(req labelRequest, prof profile) (labelSpec, error) {
 			defer func() { _ = parsed.Close() }()
 			tagFace = parsed
 		}
-		spec.Items = layoutFlag(req, canvas, titleFace, bodyFace, tagFace, tagMM)
+
+		assetTitleFace := titleFace
+		if titleMM != prof.titleMM {
+			parsed, err := newFace(set.bold, prof.titleMM*measureScale)
+			if err != nil {
+				return labelSpec{}, err
+			}
+			defer func() { _ = parsed.Close() }()
+			assetTitleFace = parsed
+		}
+
+		spec.Items = layoutFlag(req, canvas, titleMM, titleFace, assetTitleFace, bodyFace, tagFace, tagMM)
 	} else if canvas.name == profileLocation {
-		spec.Items = layoutLocation(req, canvas, titleFace, bodyFace, footerFace, footerMM)
+		spec.Items = layoutLocation(req, canvas, titleMM, titleFace, bodyFace, footerFace, footerMM)
 	} else {
-		spec.Items = layoutStandard(req, canvas, titleFace, bodyFace, footerFace, footerMM)
+		spec.Items = layoutStandard(req, canvas, titleMM, titleFace, bodyFace, footerFace, footerMM)
 	}
 
 	return spec, nil
@@ -182,7 +196,7 @@ func cableFrontTagMM(prof profile) float64 {
 // as a location label: QR code over the asset ID on the left, name over tags and
 // description on the right. The location path is left off — that belongs on a
 // location label.
-func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, _ font.Face, _ float64) []labelItem {
+func layoutStandard(req labelRequest, prof profile, titleMM float64, titleFace, bodyFace, _ font.Face, _ float64) []labelItem {
 	var items []labelItem
 
 	gap := contentGap(prof)
@@ -247,7 +261,7 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, _ font.
 
 	primary, _ := headline(req)
 	cursor := appendLines(&items, wrapText(primary, titleFace, textWidth, maxTitleLines),
-		textX, prof.paddingMM, textWidth, prof.titleMM, true)
+		textX, prof.paddingMM, textWidth, titleMM, true)
 
 	if tagText := formatTags(req.tags); tagText != "" {
 		remaining := int((prof.heightMM - prof.paddingMM - cursor) / bodyLineHeight)
@@ -271,7 +285,7 @@ func layoutStandard(req labelRequest, prof profile, titleFace, bodyFace, _ font.
 // The face is split left/right: QR code over the asset ID on the left, name over
 // the full ancestry path on the right. Description and tags are omitted so a long
 // path can still wrap in the right column.
-func layoutLocation(req labelRequest, prof profile, titleFace, bodyFace, footerFace font.Face, footerMM float64) []labelItem {
+func layoutLocation(req labelRequest, prof profile, titleMM float64, titleFace, bodyFace, footerFace font.Face, footerMM float64) []labelItem {
 	var items []labelItem
 
 	gap := contentGap(prof)
@@ -337,7 +351,7 @@ func layoutLocation(req labelRequest, prof profile, titleFace, bodyFace, footerF
 
 	primary, _ := headline(req)
 	cursor := appendLines(&items, wrapText(primary, titleFace, textWidth, maxTitleLines),
-		textX, prof.paddingMM, textWidth, prof.titleMM, true)
+		textX, prof.paddingMM, textWidth, titleMM, true)
 
 	if req.footer != "" {
 		remaining := int((prof.heightMM - prof.paddingMM - cursor) / footerLineHeight)
@@ -361,7 +375,7 @@ func layoutLocation(req labelRequest, prof profile, titleFace, bodyFace, footerF
 // prof is the rotated canvas, so the fold that runs across the label's width is a
 // horizontal line here, splitting the canvas into two wide, short faces stacked
 // on top of each other.
-func layoutFlag(req labelRequest, prof profile, titleFace, bodyFace, tagFace font.Face, tagMM float64) []labelItem {
+func layoutFlag(req labelRequest, prof profile, titleMM float64, titleFace, assetTitleFace, bodyFace, tagFace font.Face, tagMM float64) []labelItem {
 	faceHeight := prof.heightMM / 2
 	tagLineHeight := tagMM * lineSpacing
 	bodyLineHeight := prof.bodyMM * lineSpacing
@@ -403,7 +417,7 @@ func layoutFlag(req labelRequest, prof profile, titleFace, bodyFace, tagFace fon
 	// Front face: one-line name, then up to three tag lines. The asset ID moves
 	// to the back so the short face can spend its height on tags.
 	cursor := appendLines(&items, wrapText(req.title, titleFace, textWidth, 1),
-		textX, prof.paddingMM, textWidth, prof.titleMM, true)
+		textX, prof.paddingMM, textWidth, titleMM, true)
 
 	if tagText := formatTags(req.tags); tagText != "" {
 		remaining := faceHeight - prof.paddingMM - cursor
@@ -417,7 +431,7 @@ func layoutFlag(req labelRequest, prof profile, titleFace, bodyFace, tagFace fon
 	backBottom := prof.heightMM - prof.paddingMM
 
 	if req.assetID != "" {
-		backY = appendLines(&items, wrapText(req.assetID, titleFace, fullWidth, 1),
+		backY = appendLines(&items, wrapText(req.assetID, assetTitleFace, fullWidth, 1),
 			prof.paddingMM, backY, fullWidth, prof.titleMM, true)
 	}
 

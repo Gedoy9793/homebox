@@ -434,6 +434,44 @@ func footerSize(prof profile) float64 {
 	return prof.bodyMM
 }
 
+const (
+	smallLabelWidthMM    = 25
+	smallLabelHeightMM   = 15
+	titleShrinkThreshold = 5
+)
+
+// titleSizeMM picks the headline size on small 25x15mm stock. Short titles keep
+// the profile default; longer ones scale down so more characters fit on the two
+// headline lines without crowding out tags and description.
+func titleSizeMM(prof profile, title string) float64 {
+	base := prof.titleMM
+	if prof.widthMM != smallLabelWidthMM || prof.heightMM != smallLabelHeightMM {
+		return base
+	}
+
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return base
+	}
+
+	count := len([]rune(title))
+	if count <= titleShrinkThreshold {
+		return base
+	}
+
+	minMM := prof.bodyMM
+	if minMM <= 0 {
+		minMM = 2.0
+	}
+
+	scaled := base * float64(titleShrinkThreshold) / float64(count)
+	if scaled < minMM {
+		return minMM
+	}
+
+	return scaled
+}
+
 // contentGap is the space between the QR code and neighbouring text blocks.
 func contentGap(prof profile) float64 {
 	if prof.gapMM > 0 {

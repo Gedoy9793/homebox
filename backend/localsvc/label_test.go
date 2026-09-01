@@ -257,6 +257,76 @@ func TestHeadlineLeadsWithTheName(t *testing.T) {
 	}
 }
 
+func TestTitleSizeMMShrinksLongTitlesOnSmallStock(t *testing.T) {
+	prof := profiles[profileStandard]
+
+	if got := titleSizeMM(prof, "货架"); got != 2.8 {
+		t.Fatalf("expected short titles to keep 2.8mm, got %g", got)
+	}
+	if got := titleSizeMM(prof, "六个字标题"); got != 2.8 {
+		t.Fatalf("expected five-character titles to keep 2.8mm, got %g", got)
+	}
+
+	wantSix := 2.8 * 5 / 6
+	if got := titleSizeMM(prof, "一二三四五六"); got != wantSix {
+		t.Fatalf("expected six-character title at %gmm, got %g", wantSix, got)
+	}
+
+	wantLong := prof.bodyMM
+	if got := titleSizeMM(prof, "三养辣鸡肉芝士味拌面（油炸方便面）"); got != wantLong {
+		t.Fatalf("expected very long title floored at body size %gmm, got %g", wantLong, got)
+	}
+
+	large := prof
+	large.widthMM = 50
+	if got := titleSizeMM(large, "三养辣鸡肉芝士味拌面（油炸方便面）"); got != 2.8 {
+		t.Fatalf("expected large stock to keep profile title size, got %g", got)
+	}
+}
+
+func TestSmallLabelUsesSmallerTitleForLongNames(t *testing.T) {
+	shortSpec, err := buildSpec(labelRequest{
+		title:   "货架",
+		assetID: testAssetID,
+		url:     testAssetURL,
+	}, profiles[profileStandard])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	longSpec, err := buildSpec(labelRequest{
+		title:   "三养辣鸡肉芝士味拌面（油炸方便面）",
+		assetID: testAssetID,
+		url:     testAssetURL,
+	}, profiles[profileStandard])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	shortTitle := findPrimaryTitle(shortSpec)
+	longTitle := findPrimaryTitle(longSpec)
+	if shortTitle == nil || longTitle == nil {
+		t.Fatal("expected bold title lines on both labels")
+	}
+	if shortTitle.FontHeight <= longTitle.FontHeight {
+		t.Fatalf("expected the long title to be smaller than the short one, got %g vs %g",
+			longTitle.FontHeight, shortTitle.FontHeight)
+	}
+	if shortTitle.FontHeight < 2.79 || shortTitle.FontHeight > 2.81 {
+		t.Fatalf("expected the short title at 2.8mm, got %g", shortTitle.FontHeight)
+	}
+}
+
+func findPrimaryTitle(spec labelSpec) *labelItem {
+	for _, item := range spec.Items {
+		if item.Type == itemText && item.Bold {
+			cp := item
+			return &cp
+		}
+	}
+	return nil
+}
+
 // Item labels lead with the name on the right and put the smaller asset ID under
 // the QR code on the left.
 func TestItemLabelLeadsWithTheName(t *testing.T) {
