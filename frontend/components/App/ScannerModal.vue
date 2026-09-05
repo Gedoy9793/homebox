@@ -57,7 +57,7 @@
 
 <script setup lang="ts">
   import { computed, ref, watch } from "vue";
-  import { BarcodeFormat, BrowserMultiFormatReader, NotFoundException } from "@zxing/library";
+  import { BarcodeFormat, BrowserMultiFormatReader, DecodeHintType, NotFoundException } from "@zxing/library";
   import { useI18n } from "vue-i18n";
   import { DialogID } from "@/components/ui/dialog-provider/utils";
   import { Dialog, DialogHeader, DialogScrollContent, DialogTitle } from "@/components/ui/dialog";
@@ -77,7 +77,8 @@
   const selectedSource = ref<string | null>(null);
   const loading = ref(false);
   const video = ref<HTMLVideoElement>();
-  const codeReader = new BrowserMultiFormatReader();
+  // Prefer accuracy over speed for small / soft printed labels.
+  const codeReader = new BrowserMultiFormatReader(new Map([[DecodeHintType.TRY_HARDER, true]]));
   const errorMessage = ref<string | null>(null);
   const detectedBarcode = ref<string>("");
   const detectedBarcodeType = ref<string>("");

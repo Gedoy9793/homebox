@@ -4,7 +4,7 @@
   // The global scanner (App/ScannerModal) cannot be reused here: it navigates to
   // whatever it scans, and it is a single shared dialog, so it has no way to hand a
   // result back to whoever opened it. This one stays inline and reports the id.
-  import { BrowserMultiFormatReader, NotFoundException } from "@zxing/library";
+  import { BrowserMultiFormatReader, DecodeHintType, NotFoundException } from "@zxing/library";
   import { useI18n } from "vue-i18n";
   import { resolveLocationIdFromScanText } from "~~/lib/labels/label-url";
   import {
@@ -33,6 +33,8 @@
   const selectedSource = ref<string | null>(null);
   const error = ref("");
 
+  // Prefer accuracy over speed for small / soft printed labels.
+  const readerHints = new Map([[DecodeHintType.TRY_HARDER, true]]);
   let reader: BrowserMultiFormatReader | undefined;
 
   async function lookupLocationFromScan(text: string): Promise<string | undefined> {
@@ -110,7 +112,7 @@
       return;
     }
 
-    reader ??= new BrowserMultiFormatReader();
+    reader ??= new BrowserMultiFormatReader(readerHints);
 
     try {
       // Ask for permission before listing devices: without it the labels come
