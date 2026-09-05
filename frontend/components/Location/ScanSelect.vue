@@ -4,7 +4,6 @@
   // The global scanner (App/ScannerModal) cannot be reused here: it navigates to
   // whatever it scans, and it is a single shared dialog, so it has no way to hand a
   // result back to whoever opened it. This one stays inline and reports the id.
-  import { BrowserMultiFormatReader, DecodeHintType, NotFoundException } from "@zxing/library";
   import { useI18n } from "vue-i18n";
   import { resolveLocationIdFromScanText } from "~~/lib/labels/label-url";
   import {
@@ -13,6 +12,16 @@
     normalizeWeChatScanResult,
     scanQRCodeInWeChat,
   } from "~~/lib/wechat-scan";
+  import {
+    createPreferredBarcodeDetector,
+    listVideoInputDevices,
+    openCameraStream,
+    preferredCameraId,
+    rememberCameraId,
+    requestCameraPermission,
+    runBarcodeDetectLoop,
+    stopMediaStream,
+  } from "~~/lib/camera-barcode-scanner";
   import { Button } from "~/components/ui/button";
   import { toast } from "@/components/ui/sonner";
   import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
@@ -24,18 +33,15 @@
   const { t } = useI18n();
   const api = useUserApi();
 
-  // Shared with the global scanner, so picking a camera once is enough.
-  const LAST_USED_DEVICE_ID_KEY = "homebox:lastUsedDeviceId";
-
   const scanning = ref(false);
   const video = ref<HTMLVideoElement>();
   const sources = ref<MediaDeviceInfo[]>([]);
   const selectedSource = ref<string | null>(null);
   const error = ref("");
 
-  // Prefer accuracy over speed for small / soft printed labels.
-  const readerHints = new Map([[DecodeHintType.TRY_HARDER, true]]);
-  let reader: BrowserMultiFormatReader | undefined;
+  let mediaStream: MediaStream | null = null;
+  let detectAbort: AbortController | null = null;
+  let detectorPromise: ReturnType<typeof createPreferredBarcodeDetector> | null = null;
 
   async function lookupLocationFromScan(text: string): Promise<string | undefined> {
     return resolveLocationIdFromScanText(text, async assetId => {
@@ -70,19 +76,18 @@
     return true;
   }
 
-  function preferredCamera(devices: MediaDeviceInfo[]): string | undefined {
-    let remembered: string | null = null;
-    try {
-      remembered = localStorage.getItem(LAST_USED_DEVICE_ID_KEY);
-    } catch (err) {
-      console.debug("failed to read selected camera", err);
-    }
+  function stopDetectLoop() {
+    detectAbort?.abort();
+    detectAbort = null;
+  }
 
-    return (
-      devices.find(device => device.deviceId === remembered)?.deviceId ??
-      devices.find(device => device.label.toLowerCase().includes("back"))?.deviceId ??
-      devices[0]?.deviceId
-    );
+  function stopCamera() {
+    stopDetectLoop();
+    stopMediaStream(mediaStream);
+    mediaStream = null;
+    if (video.value) {
+      video.value.srcObject = null;
+    }
   }
 
   async function start(): Promise<void> {
@@ -112,21 +117,19 @@
       return;
     }
 
-    reader ??= new BrowserMultiFormatReader(readerHints);
-
     try {
-      // Ask for permission before listing devices: without it the labels come
-      // back empty, which makes the camera picker useless.
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      stream.getTracks().forEach(track => track.stop());
+      await requestCameraPermission();
 
-      sources.value = await reader.listVideoInputDevices();
+      detectorPromise ??= createPreferredBarcodeDetector();
+      await detectorPromise;
+
+      sources.value = await listVideoInputDevices();
       if (sources.value.length === 0) {
         error.value = t("scanner.no_sources");
         return;
       }
 
-      selectedSource.value = preferredCamera(sources.value) ?? null;
+      selectedSource.value = preferredCameraId(sources.value) ?? null;
     } catch (err) {
       if (err instanceof Error && err.name === "NotAllowedError") {
         error.value = t("scanner.permission_denied");
@@ -139,40 +142,37 @@
   }
 
   function stop(): void {
-    reader?.reset();
+    stopCamera();
     scanning.value = false;
     sources.value = [];
     selectedSource.value = null;
   }
 
-  watch(selectedSource, async source => {
-    if (!scanning.value || !source || !video.value) {
+  watch([selectedSource, video], async ([source, el]) => {
+    if (!scanning.value || !source || !el) {
       return;
     }
 
-    reader?.reset();
+    stopCamera();
+    rememberCameraId(source);
 
     try {
-      localStorage.setItem(LAST_USED_DEVICE_ID_KEY, source);
-    } catch (err) {
-      console.debug("failed to persist selected camera", err);
-    }
+      const { detector, engine } = await (detectorPromise ??= createPreferredBarcodeDetector());
+      console.debug(`[scanner] using ${engine} BarcodeDetector`);
 
-    try {
-      await reader?.decodeFromVideoDevice(source, video.value, (result, err) => {
-        if (result) {
-          void handleScannedText(result.getText()).catch(scanErr => {
+      mediaStream = await openCameraStream(source, el);
+      detectAbort = new AbortController();
+      runBarcodeDetectLoop(
+        detector,
+        el,
+        barcode => {
+          void handleScannedText(barcode.rawValue).catch(scanErr => {
             console.error(scanErr);
             error.value = t("scanner.error");
           });
-          return;
-        }
-
-        if (err && !(err instanceof NotFoundException)) {
-          console.error(err);
-          error.value = t("scanner.error");
-        }
-      });
+        },
+        detectAbort.signal
+      );
     } catch (err) {
       console.error("Scanner error:", err);
       error.value = t("scanner.error");

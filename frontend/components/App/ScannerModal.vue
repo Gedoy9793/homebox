@@ -57,7 +57,6 @@
 
 <script setup lang="ts">
   import { computed, ref, watch } from "vue";
-  import { BarcodeFormat, BrowserMultiFormatReader, DecodeHintType, NotFoundException } from "@zxing/library";
   import { useI18n } from "vue-i18n";
   import { DialogID } from "@/components/ui/dialog-provider/utils";
   import { Dialog, DialogHeader, DialogScrollContent, DialogTitle } from "@/components/ui/dialog";
@@ -68,6 +67,19 @@
   import MdiCameraOutline from "~icons/mdi/camera-outline";
   import { useDialog } from "@/components/ui/dialog-provider";
   import { homeboxPathFromScanText } from "~~/lib/scan-result";
+  import {
+    createPreferredBarcodeDetector,
+    displayBarcodeFormat,
+    isProductBarcodeFormat,
+    listVideoInputDevices,
+    openCameraStream,
+    preferredCameraId,
+    rememberCameraId,
+    requestCameraPermission,
+    runBarcodeDetectLoop,
+    stopMediaStream,
+    type ScannedBarcode,
+  } from "~~/lib/camera-barcode-scanner";
 
   const { t } = useI18n();
   const { activeDialog, openDialog, closeDialog } = useDialog();
@@ -77,13 +89,13 @@
   const selectedSource = ref<string | null>(null);
   const loading = ref(false);
   const video = ref<HTMLVideoElement>();
-  // Prefer accuracy over speed for small / soft printed labels.
-  const codeReader = new BrowserMultiFormatReader(new Map([[DecodeHintType.TRY_HARDER, true]]));
   const errorMessage = ref<string | null>(null);
   const detectedBarcode = ref<string>("");
   const detectedBarcodeType = ref<string>("");
 
-  const LAST_USED_DEVICE_ID_KEY = "homebox:lastUsedDeviceId";
+  let mediaStream: MediaStream | null = null;
+  let detectAbort: AbortController | null = null;
+  let detectorPromise: ReturnType<typeof createPreferredBarcodeDetector> | null = null;
 
   const handleError = (error: unknown) => {
     console.error("Scanner error:", error);
@@ -99,6 +111,48 @@
     navigateTo("/scanner-ar");
   };
 
+  function stopDetectLoop() {
+    detectAbort?.abort();
+    detectAbort = null;
+  }
+
+  function stopCamera() {
+    stopDetectLoop();
+    stopMediaStream(mediaStream);
+    mediaStream = null;
+    if (video.value) {
+      video.value.srcObject = null;
+    }
+  }
+
+  const handleScanned = async (barcode: ScannedBarcode) => {
+    if (loading.value) {
+      return;
+    }
+
+    loading.value = true;
+    const text = barcode.rawValue;
+    const path = homeboxPathFromScanText(text);
+    if (path) {
+      closeDialog(DialogID.Scanner);
+      navigateTo(path);
+      return;
+    }
+
+    if (isProductBarcodeFormat(barcode.format) || /^\d{8,14}$/.test(text.trim())) {
+      stopDetectLoop();
+      detectedBarcode.value = text.trim();
+      detectedBarcodeType.value = displayBarcodeFormat(barcode.format);
+      loading.value = false;
+      return;
+    }
+
+    if (!errorMessage.value) {
+      handleError(new Error(t("scanner.invalid_url")));
+    }
+    loading.value = false;
+  };
+
   const startScanner = async () => {
     errorMessage.value = null;
     if (!(navigator && navigator.mediaDevices && "enumerateDevices" in navigator.mediaDevices)) {
@@ -107,10 +161,8 @@
     }
 
     try {
-      // Request camera permission first
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        stream.getTracks().forEach(track => track.stop());
+        await requestCameraPermission();
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "NotAllowedError") {
           errorMessage.value = t("scanner.permission_denied");
@@ -119,26 +171,14 @@
         throw err;
       }
 
-      const devices = await codeReader.listVideoInputDevices();
+      detectorPromise ??= createPreferredBarcodeDetector();
+      await detectorPromise;
+
+      const devices = await listVideoInputDevices();
       sources.value = devices;
 
       if (devices.length > 0) {
-        let lastUsedDeviceId: string | null = null;
-        try {
-          lastUsedDeviceId = localStorage.getItem(LAST_USED_DEVICE_ID_KEY);
-        } catch (e) {
-          console.debug("failed to read selected camera", e);
-        }
-
-        selectedSource.value = devices[0]!.deviceId;
-        for (const device of devices) {
-          if (device.deviceId === lastUsedDeviceId) {
-            selectedSource.value = device.deviceId;
-            break;
-          } else if (device.label.toLowerCase().includes("back")) {
-            selectedSource.value = device.deviceId;
-          }
-        }
+        selectedSource.value = preferredCameraId(devices) ?? null;
       } else {
         errorMessage.value = t("scanner.no_sources");
       }
@@ -148,7 +188,7 @@
   };
 
   const stopScanner = () => {
-    codeReader.reset();
+    stopCamera();
     sources.value = [];
     selectedSource.value = null;
     loading.value = false;
@@ -157,53 +197,30 @@
   watch(open, async isOpen => {
     if (isOpen) {
       detectedBarcode.value = "";
+      detectedBarcodeType.value = "";
       await startScanner();
     } else {
       stopScanner();
     }
   });
 
-  watch(selectedSource, async newSource => {
-    if (!open.value || !newSource) return;
-    codeReader.reset();
-
-    try {
-      localStorage.setItem(LAST_USED_DEVICE_ID_KEY, newSource);
-    } catch (e) {
-      console.warn("failed to persist selected camera", e);
+  watch([selectedSource, video], async ([source, el]) => {
+    if (!open.value || !source || !el) {
+      return;
     }
 
-    try {
-      await codeReader.decodeFromVideoDevice(newSource, video.value!, (result, err) => {
-        if (result && !loading.value) {
-          loading.value = true;
-          const text = result.getText();
-          const path = homeboxPathFromScanText(text);
-          if (path) {
-            closeDialog(DialogID.Scanner);
-            navigateTo(path);
-            return;
-          }
+    stopCamera();
+    rememberCameraId(source);
 
-          const bcfmt = result.getBarcodeFormat();
-          switch (bcfmt) {
-            case BarcodeFormat.EAN_13:
-            case BarcodeFormat.UPC_A:
-            case BarcodeFormat.UPC_E:
-            case BarcodeFormat.UPC_EAN_EXTENSION:
-              detectedBarcode.value = text;
-              detectedBarcodeType.value = BarcodeFormat[bcfmt].replaceAll("_", "-");
-              break;
-            default:
-              handleError(new Error(t("scanner.invalid_url")));
-          }
-          loading.value = false;
-        }
-        if (err && !(err instanceof NotFoundException)) {
-          console.error(err);
-          handleError(err);
-        }
-      });
+    try {
+      const { detector, engine } = await (detectorPromise ??= createPreferredBarcodeDetector());
+      console.debug(`[scanner] using ${engine} BarcodeDetector`);
+
+      mediaStream = await openCameraStream(source, el);
+      detectAbort = new AbortController();
+      runBarcodeDetectLoop(detector, el, barcode => {
+        void handleScanned(barcode);
+      }, detectAbort.signal);
     } catch (err) {
       handleError(err);
     }
